@@ -1754,6 +1754,7 @@ export default function App() {
               ) : (
                 filtered.map((n) => {
                   const { icon: Icon, color, name } = kinds[n.content.kind];
+                  const attachmentCount = attachments.filter((a) => a.note_id === n.id).length;
                   return (
                     <button
                       className={`note-card ${n.id === selected ? 'selected' : ''}`}
@@ -1773,24 +1774,26 @@ export default function App() {
                         {n.content.kind === 'credential'
                           ? n.content.username || t('已加密')
                           : n.content.kind === 'license'
-                            ? '•••• •••• •••• ••••'
+                            ? n.content.body.trim().slice(0, 100) || t('已加密')
                             : n.content.body.slice(0, 100) || t('还没有添加内容')}
                       </p>
-                      <div className="note-card-bottom">
-                        <div>
-                          {n.content.tags.slice(0, 2).map((t) => (
-                            <span key={t} className="tag">
-                              {t}
+                      {(n.content.tags.length > 0 || attachmentCount > 0) && (
+                        <div className="note-card-bottom">
+                          <div>
+                            {n.content.tags.slice(0, 2).map((t) => (
+                              <span key={t} className="tag">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                          {attachmentCount > 0 && (
+                            <span>
+                              <Paperclip size={11} />
+                              {attachmentCount}
                             </span>
-                          ))}
+                          )}
                         </div>
-                        {attachments.filter((a) => a.note_id === n.id).length > 0 && (
-                          <span>
-                            <Paperclip size={11} />
-                            {attachments.filter((a) => a.note_id === n.id).length}
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </button>
                   );
                 })

@@ -826,7 +826,7 @@ p {
 .note-list {
   overflow: auto;
   flex: 1;
-  padding: 0 12px 12px;
+  padding: 6px 12px 12px;
 }
 .note-card {
   display: block;
@@ -881,9 +881,9 @@ p {
 .note-card h3 {
   font-weight: 500;
   font-size: 15px;
-  margin: 13px 0 7px;
+  margin: 8px 0 4px;
   color: var(--text);
-  line-height: 1.6;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -892,10 +892,13 @@ p {
   font-size: 13px;
   line-height: 1.9;
   color: var(--text-secondary);
-  height: 46px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   margin: 0;
   overflow: hidden;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .note-card-bottom {
   display: flex;
@@ -1775,7 +1778,7 @@ p {
     border: 0;
   }
   .note-list {
-    padding: 0 15px 20px;
+    padding: 6px 15px 20px;
   }
   .note-card {
     padding: 17px;
@@ -2146,8 +2149,8 @@ textarea::placeholder {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 13px;
-  margin-bottom: 12px;
-  padding: 17px;
+  margin-bottom: 8px;
+  padding: 13px 15px;
   position: relative;
   overflow: hidden;
   text-align: start;
@@ -2173,8 +2176,7 @@ textarea::placeholder {
 .note-card:hover {
   background: var(--surface);
   border-color: var(--accent);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--shadow-color);
+  box-shadow: 0 2px 8px var(--shadow-color);
 }
 .note-card.selected {
   background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
