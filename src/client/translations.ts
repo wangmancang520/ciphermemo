@@ -1,4 +1,6 @@
 export const english: Record<string, string> = {
+  '5GB 参考容量': '5 GB reference',
+  '正在读取用量…': 'Loading usage…',
   '请通过 HTTPS 安全连接打开网站后再登录。': 'Open this site over HTTPS before signing in.',
   '当前浏览器未提供所需的加密功能，请使用最新版 Chrome、Edge、Firefox 或 Safari 打开。':
     'This browser does not provide the required cryptography features. Open the site in an up-to-date Chrome, Edge, Firefox, or Safari browser.',

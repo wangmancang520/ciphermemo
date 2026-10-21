@@ -67,6 +67,7 @@ import type {
 
 type Unlocked = { key: CryptoKey; info: SessionInfo };
 type Filter = 'all' | 'pinned' | 'trash' | NoteKind;
+const STORAGE_REFERENCE = 5 * 1024 ** 3;
 const kinds: Record<NoteKind, { name: string; icon: typeof FileText; color: string }> = {
   note: { name: '备忘录', icon: FileText, color: 'blue' },
   credential: { name: '账号密码', icon: KeyRound, color: 'amber' },
@@ -1539,12 +1540,16 @@ export default function App() {
       <aside className={`sidebar ${mobileSidebar ? 'mobile-open' : ''}`}>
         <Brand />
         <div className="space-label">
-          <span className="avatar">{unlocked.info.vault.username.charAt(0).toUpperCase()}</span>
-          <span>
-            {t('我的私人空间')}
-            <small>{unlocked.info.vault.username}</small>
+          <span className="avatar" aria-hidden="true">
+            {unlocked.info.vault.username.charAt(0).toUpperCase()}
+            <span className="avatar-status">
+              <ShieldCheck size={12} />
+            </span>
           </span>
-          <ShieldCheck size={15} />
+          <div className="space-identity">
+            <strong>{t('我的私人空间')}</strong>
+            <span title={unlocked.info.vault.username}>{unlocked.info.vault.username}</span>
+          </div>
         </div>
         <button
           className="button primary new-button"
@@ -1627,12 +1632,32 @@ export default function App() {
                 .catch(showError);
             }}
           >
-            <HardDrive size={17} />
-            <span>
-              {t('空间已使用')}
-              <strong>{usage ? bytes(usage.total) : '…'}</strong>
+            <span className="storage-heading">
+              <span className="storage-symbol">
+                <HardDrive size={17} />
+              </span>
+              <span>{t('空间已使用')}</span>
+              <ChevronRight size={16} />
             </span>
-            <ChevronRight size={15} />
+            <span className="storage-amount">
+              <strong>{usage ? bytes(usage.total) : '…'}</strong>
+              <span>/ 5 GB</span>
+            </span>
+            <progress
+              className={`storage-progress ${usage && usage.total >= STORAGE_REFERENCE ? 'at-reference' : ''}`}
+              aria-label={t('空间已使用')}
+              aria-valuetext={usage ? `${bytes(usage.total)} / 5 GB` : t('正在读取用量…')}
+              max={STORAGE_REFERENCE}
+              value={usage ? Math.min(usage.total, STORAGE_REFERENCE) : undefined}
+            />
+            <span className="storage-caption">
+              <span>{t('5GB 参考容量')}</span>
+              <span>
+                {usage
+                  ? `${usage.total > 0 && usage.total / STORAGE_REFERENCE < 0.001 ? '<0.1' : new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format((usage.total / STORAGE_REFERENCE) * 100)}%`
+                  : '—'}
+              </span>
+            </span>
           </button>
           <div className="privacy-label">
             <span className="live-dot" />
