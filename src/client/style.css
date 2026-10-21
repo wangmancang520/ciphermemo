@@ -2780,3 +2780,159 @@ button.space-label:focus-visible {
     height: 36px;
   }
 }
+
+/* Shared interaction motion: short, interruptible transitions. */
+.motion-presence {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.motion-presence[data-exiting] {
+  opacity: 0;
+  pointer-events: none;
+}
+.motion-presence[data-exiting] .modal {
+  transform: translateY(8px) scale(0.985);
+}
+.workspace.is-securing::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--canvas);
+}
+.lock-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: var(--canvas);
+  color: var(--text-secondary);
+  font-weight: 600;
+  pointer-events: none;
+  animation: lock-screen 650ms both;
+}
+.lock-transition-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border-radius: 30px;
+  background: var(--accent-soft);
+  box-shadow: 0 18px 60px var(--shadow-color);
+  animation: lock-mark 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.lock-transition-mark > span {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--canvas);
+  border-radius: 50%;
+  color: var(--on-accent);
+  background: var(--accent);
+  animation: lock-badge 200ms 100ms both;
+}
+.is-lock-return .auth-layout {
+  animation: panel-enter 280ms 300ms both;
+}
+.segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 148px;
+  isolation: isolate;
+}
+.segmented::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 3px auto 3px 3px;
+  width: calc((100% - 6px) / 2);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 0 1px 4px var(--shadow-color);
+  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.segmented[data-preview='true']::before {
+  transform: translateX(100%);
+}
+.segmented button.active {
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+}
+.settings-tabs button {
+  position: relative;
+}
+.settings-tabs button.active {
+  border-bottom-color: transparent;
+}
+.settings-tabs button::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform 180ms ease;
+}
+.settings-tabs button.active::after {
+  transform: scaleX(1);
+}
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.nav-item:active:not(:disabled) {
+  transform: translateX(2px);
+}
+@keyframes lock-screen {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes lock-mark {
+  from {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes lock-badge {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lock-transition {
+    display: none;
+  }
+  .button:active:not(:disabled),
+  .icon-button:active:not(:disabled),
+  .nav-item:active:not(:disabled) {
+    transform: none;
+  }
+}

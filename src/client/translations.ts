@@ -1,4 +1,5 @@
 export const english: Record<string, string> = {
+  '正在退出…': 'Signing out…',
   邮箱: 'Email',
   输入你的邮箱: 'Enter your email',
   返回邮箱密码登录: 'Back to email sign in',

@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useMotionSwitch } from './motion';
+import { usePresence } from './MotionPresence';
 import { X } from 'lucide-react';
 import { t } from './preferences';
 export default function Modal({
@@ -11,16 +13,27 @@ export default function Modal({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const active = usePresence();
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const restore = useRef<HTMLElement | null>(null);
+  useMotionSwitch(ref, 'dialog', 'dialog');
+  useLayoutEffect(() => {
+    if (!active && restore.current?.isConnected) restore.current.focus();
+    else if (active && restore.current) ref.current?.focus();
+  }, [active]);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
     const old = document.activeElement as HTMLElement | null;
+    restore.current = old;
     ref.current?.focus();
     const key = (e: KeyboardEvent) => {
+      if (!activeRef.current) return;
       if (e.key === 'Escape') closeRef.current();
       if (e.key === 'Tab') {
         const items = ref.current?.querySelectorAll<HTMLElement>(
-          'button,input,select,textarea,a[href]',
+          'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]',
         );
         if (!items?.length) return;
         const first = items[0],
@@ -37,7 +50,11 @@ export default function Modal({
     document.addEventListener('keydown', key);
     return () => {
       document.removeEventListener('keydown', key);
-      old?.focus();
+      if (
+        old?.isConnected &&
+        (document.activeElement === document.body || ref.current?.contains(document.activeElement))
+      )
+        old.focus();
     };
   }, []);
   return (

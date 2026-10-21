@@ -47,6 +47,8 @@ import { t, locale, clockTime, usePreferences } from './preferences';
 import Preferences from './PreferenceControls';
 import Brand, { LogoMark } from './Brand';
 import Modal from './Modal';
+import MotionPresence from './MotionPresence';
+import { useMotionSwitch, prefersReducedMotion } from './motion';
 import ProfileEditor, { useAvatar, openProfile, emptyProfile } from './ProfileEditor';
 import { PROFILE_OWNER_ID, type ProfileContent, type ProfileRecord } from '../shared/types';
 import { marked } from 'marked';
@@ -175,7 +177,9 @@ function Auth({
   setupAvailable,
   onUnlock,
   notice,
+  signingOut = false,
 }: {
+  signingOut?: boolean;
   initialized: boolean;
   setupAvailable: boolean;
   onUnlock: (u: Unlocked, raw: Uint8Array<ArrayBuffer>) => void;
@@ -197,6 +201,8 @@ function Auth({
     recovery: string;
   } | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const authCard = useRef<HTMLElement>(null);
+  useMotionSwitch(authCard, `${mode}:${!!created}`);
   const cryptoStatus = crypt.cryptoAvailability();
   const cryptoError =
     cryptoStatus === 'insecure'
@@ -208,6 +214,7 @@ function Auth({
   secureUrl.protocol = 'https:';
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (signingOut) return;
     setError('');
     setBusy(true);
     try {
@@ -351,7 +358,7 @@ function Auth({
             <span>YOUR THOUGHTS. YOUR KEYS.</span>
           </div>
         </section>
-        <section className="auth-card">
+        <section className="auth-card" ref={authCard}>
           {created ? (
             <>
               <div className="card-symbol">
@@ -518,12 +525,14 @@ function Auth({
                 )}
                 <button
                   className="button primary full"
-                  disabled={busy || !!cryptoError || (mode === 'setup' && !setupAvailable)}
+                  disabled={
+                    busy || signingOut || !!cryptoError || (mode === 'setup' && !setupAvailable)
+                  }
                 >
-                  {busy ? (
+                  {busy || signingOut ? (
                     <>
                       <Spinner />
-                      {t('正在安全处理…')}
+                      {t(signingOut ? '正在退出…' : '正在安全处理…')}
                     </>
                   ) : (
                     <>
@@ -589,6 +598,8 @@ const Editor = forwardRef<
   const [draft, setDraft] = useState(note.content);
   const [tagsText, setTagsText] = useState(note.content.tags.join(', '));
   const [preview, setPreview] = useState(false);
+  const bodyPanel = useRef<HTMLDivElement>(null);
+  useMotionSwitch(bodyPanel, preview);
   const [uploading, setUploading] = useState('');
   const draftRef = useRef(draft);
   const recordRef = useRef(note);
@@ -817,7 +828,7 @@ const Editor = forwardRef<
         )}
         <div className="body-head">
           <span>{draft.kind === 'note' ? t('正文') : t('备注')}</span>
-          <div className="segmented">
+          <div className="segmented" data-preview={preview}>
             <button className={!preview ? 'active' : ''} onClick={() => setPreview(false)}>
               {t('编辑')}
             </button>
@@ -826,27 +837,29 @@ const Editor = forwardRef<
             </button>
           </div>
         </div>
-        {preview ? (
-          <div
-            className="markdown"
-            dangerouslySetInnerHTML={{ __html: content || t('<p>还没有内容。</p>') }}
-          />
-        ) : (
-          <textarea
-            className="body-input"
-            aria-label={t('正文')}
-            placeholder={t('写下值得保存的内容…\n\n支持 Markdown，也可以粘贴图片或拖入文件。')}
-            value={draft.body}
-            onChange={(e) => change({ body: e.target.value })}
-            onPaste={(e) => {
-              const fs = Array.from(e.clipboardData.files);
-              if (fs.length) {
-                e.preventDefault();
-                void upload(fs);
-              }
-            }}
-          />
-        )}
+        <div className="editor-body" ref={bodyPanel}>
+          {preview ? (
+            <div
+              className="markdown"
+              dangerouslySetInnerHTML={{ __html: content || t('<p>还没有内容。</p>') }}
+            />
+          ) : (
+            <textarea
+              className="body-input"
+              aria-label={t('正文')}
+              placeholder={t('写下值得保存的内容…\n\n支持 Markdown，也可以粘贴图片或拖入文件。')}
+              value={draft.body}
+              onChange={(e) => change({ body: e.target.value })}
+              onPaste={(e) => {
+                const fs = Array.from(e.clipboardData.files);
+                if (fs.length) {
+                  e.preventDefault();
+                  void upload(fs);
+                }
+              }}
+            />
+          )}
+        </div>
         <label className="tags-field">
           <span>{t('标签')}</span>
           <input
@@ -1135,9 +1148,33 @@ function AttachmentCard({
   );
 }
 
+function LockTransition() {
+  return (
+    <div className="lock-transition" role="status" aria-label={t('空间已锁定。')}>
+      <div className="lock-transition-mark">
+        <LogoMark size={68} />
+        <span>
+          <Lock size={16} />
+        </span>
+      </div>
+      <span>{t('空间已锁定。')}</span>
+    </div>
+  );
+}
+
 export default function App() {
   usePreferences();
   const [entering, setEntering] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [lockAnimating, setLockAnimating] = useState(false);
+  const lockTask = useRef<Promise<void> | null>(null);
+  const noteList = useRef<HTMLDivElement>(null);
+  const detailPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!lockAnimating) return;
+    const timer = setTimeout(() => setLockAnimating(false), prefersReducedMotion() ? 0 : 650);
+    return () => clearTimeout(timer);
+  }, [lockAnimating]);
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
   useEffect(() => {
@@ -1155,6 +1192,8 @@ export default function App() {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  useMotionSwitch(noteList, `${!!unlocked}:${filter}`, 'list');
+  useMotionSwitch(detailPanel, `${!!unlocked}:${filter}:${selected ?? 'empty'}`);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -1260,27 +1299,38 @@ export default function App() {
     setError('');
     setBusy(false);
   }
-  const lock = useCallback(async (reason = '空间已锁定。') => {
-    try {
-      const draft = await editor.current?.capture();
-      if (draft) {
-        pendingDraft.current = draft;
-        reason += ' 未保存的编辑已在当前页面内加密暂存，重新登录后将恢复为副本；请勿关闭页面。';
+  const lock = useCallback((reason = '空间已锁定。') => {
+    if (lockTask.current) return lockTask.current;
+    setSigningOut(true);
+    const work = async () => {
+      try {
+        const draft = await editor.current?.capture();
+        if (draft) {
+          pendingDraft.current = draft;
+          reason += ' 未保存的编辑已在当前页面内加密暂存，重新登录后将恢复为副本；请勿关闭页面。';
+        }
+      } catch {
+        reason += ' 未保存的编辑未能恢复。';
       }
-    } catch {
-      reason += ' 未保存的编辑未能恢复。';
-    }
-    clearMemory();
-    setNotice(reason);
-    setStatus({ initialized: true, setupAvailable: false });
-    await forgetDevice().catch(() => {});
-    await post('/auth/logout', {}).catch(() => {});
+      clearMemory();
+      setLockAnimating(true);
+      setNotice(reason);
+      setStatus({ initialized: true, setupAvailable: false });
+      // Revoke the old session immediately; never delay it for the animation.
+      await Promise.allSettled([forgetDevice(), post('/auth/logout', {})]);
+    };
+    lockTask.current = work().finally(() => {
+      lockTask.current = null;
+      setSigningOut(false);
+    });
+    return lockTask.current;
   }, []);
   const unlock = useCallback(
     (u: Unlocked, raw: Uint8Array<ArrayBuffer>) => {
       rawKey.current = raw;
       setUnlocked(u);
       setEntering(true);
+      setLockAnimating(false);
       setStatus({ initialized: true, setupAvailable: false });
       setNotice('');
       setError('');
@@ -1424,8 +1474,10 @@ export default function App() {
     );
   if (!unlocked)
     return (
-      <>
+      <div className={`auth-shell ${lockAnimating ? 'is-lock-return' : ''}`}>
+        {lockAnimating && <LockTransition />}
         <Auth
+          signingOut={signingOut}
           key={status.initialized ? 'login' : 'setup'}
           initialized={status.initialized}
           setupAvailable={status.setupAvailable}
@@ -1440,7 +1492,7 @@ export default function App() {
             </button>
           </div>
         )}
-      </>
+      </div>
     );
   const active = notes.find((n) => n.id === selected);
   const count = (f: Filter) =>
@@ -1474,7 +1526,10 @@ export default function App() {
           ? '回收站'
           : kinds[filter].name;
   return (
-    <div className={`workspace ${entering ? 'is-entering' : ''}`}>
+    <div
+      className={`workspace ${entering ? 'is-entering' : ''} ${signingOut ? 'is-securing' : ''}`}
+      inert={signingOut}
+    >
       {entering && (
         <div className="unlock-transition" role="status" aria-label={t('欢迎回来')}>
           <div className="unlock-logo">
@@ -1690,7 +1745,7 @@ export default function App() {
             {filter === 'trash' && (
               <div className="trash-hint">{t('删除后保留 30 天，可随时恢复。')}</div>
             )}
-            <div className="note-list">
+            <div className="note-list" ref={noteList}>
               {busy && !notes.length ? (
                 <div className="list-empty">
                   <Spinner />
@@ -1787,7 +1842,7 @@ export default function App() {
               </button>
             </div>
           </section>
-          <section className="detail-panel">
+          <section className="detail-panel" ref={detailPanel}>
             {active ? (
               <>
                 <button
@@ -1903,113 +1958,123 @@ export default function App() {
           </button>
         </div>
       )}
-      {modal === 'new' && (
-        <Modal title={t('你想保存什么？')} onClose={() => setModal(null)}>
-          <p className="muted">{t('为每一种重要内容，找到合适的位置。')}</p>
-          <div className="new-grid">
-            {(Object.entries(kinds) as [NoteKind, typeof kinds.note][]).map(
-              ([kind, { name, icon: Icon, color }]) => (
-                <button key={kind} disabled={busy} onClick={() => void create(kind)}>
-                  <span className={`type-icon ${color}`}>
-                    <Icon size={24} />
-                  </span>
-                  <strong>{t(name)}</strong>
-                  <small>
-                    {
+      <MotionPresence>
+        {modal === 'new' && (
+          <Modal title={t('你想保存什么？')} onClose={() => setModal(null)}>
+            <p className="muted">{t('为每一种重要内容，找到合适的位置。')}</p>
+            <div className="new-grid">
+              {(Object.entries(kinds) as [NoteKind, typeof kinds.note][]).map(
+                ([kind, { name, icon: Icon, color }]) => (
+                  <button key={kind} disabled={busy} onClick={() => void create(kind)}>
+                    <span className={`type-icon ${color}`}>
+                      <Icon size={24} />
+                    </span>
+                    <strong>{t(name)}</strong>
+                    <small>
                       {
-                        note: t('想法、记录与 Markdown'),
-                        credential: t('网站、用户名与密码'),
-                        license: t('软件序列号与激活码'),
-                        file: t('图片、文档与小文件'),
-                      }[kind]
-                    }
-                  </small>
-                  <ArrowUpRight size={17} />
-                </button>
-              ),
-            )}
-          </div>
-        </Modal>
-      )}
-      {modal === 'usage' && usage && (
-        <Modal title={t('空间用量')} onClose={() => setModal(null)}>
-          <div className="usage-total">
-            {bytes(usage.total)}
-            <small>{t('已保存的内容，无应用容量配额')}</small>
-          </div>
-          <div className="usage-rows">
-            {[
-              [t('文本与条目'), usage.text],
-              [t('图片与文件'), usage.files],
-              [t('回收站'), usage.trash],
-              [t('上传与待清理'), usage.pending],
-            ].map(([label, value]) => (
-              <div key={String(label)}>
-                <span>{t(String(label))}</span>
-                <strong>{bytes(Number(value))}</strong>
-              </div>
-            ))}
-          </div>
-          <p className="muted small">
-            {usage.notes} {t('条内容 ·')}
-            {usage.attachments} {t('个附件。')}
-          </p>
-        </Modal>
-      )}
-      {modal === 'trash' && active && (
-        <Modal title={t('永久删除这条内容？')} onClose={() => setModal(null)}>
-          <p className="muted">
-            “{active.content.title || t('未命名内容')}
-            {t('”及其附件将永久删除，无法从回收站恢复。')}
-          </p>
-          <div className="modal-actions">
-            <button className="button secondary" onClick={() => setModal(null)}>
-              {t('取消')}
-            </button>
-            <button
-              className="button danger-fill"
-              onClick={async () => {
-                try {
-                  await api(`/notes/${active.id}`, { method: 'DELETE' });
-                  setSelected(null);
-                  setModal(null);
-                  await load(unlocked);
-                } catch (e) {
-                  showError(e);
-                }
-              }}
-            >
-              {t('永久删除')}
-            </button>
-          </div>
-        </Modal>
-      )}
-      {modal === 'profile' && (
-        <ProfileEditor
-          vaultKey={unlocked.key}
-          email={unlocked.info.vault.username}
-          profile={profile}
-          avatar={avatar}
-          onClose={() => setModal(null)}
-          onSaved={(record, content) => {
-            setProfile({ record, content });
-            setSyncedAt(Date.now());
-            setModal(null);
-            void refreshFiles().catch(showError);
-          }}
-        />
-      )}
-      {modal === 'settings' && (
-        <SettingsModal
-          unlocked={unlocked}
-          raw={rawKey.current!}
-          notes={notes}
-          onClose={() => setModal(null)}
-          onError={showError}
-          onLogout={() => void lock('账号设置已更新，请重新登录。')}
-          onImported={() => load(unlocked)}
-        />
-      )}
+                        {
+                          note: t('想法、记录与 Markdown'),
+                          credential: t('网站、用户名与密码'),
+                          license: t('软件序列号与激活码'),
+                          file: t('图片、文档与小文件'),
+                        }[kind]
+                      }
+                    </small>
+                    <ArrowUpRight size={17} />
+                  </button>
+                ),
+              )}
+            </div>
+          </Modal>
+        )}
+      </MotionPresence>
+      <MotionPresence>
+        {modal === 'usage' && usage && (
+          <Modal title={t('空间用量')} onClose={() => setModal(null)}>
+            <div className="usage-total">
+              {bytes(usage.total)}
+              <small>{t('已保存的内容，无应用容量配额')}</small>
+            </div>
+            <div className="usage-rows">
+              {[
+                [t('文本与条目'), usage.text],
+                [t('图片与文件'), usage.files],
+                [t('回收站'), usage.trash],
+                [t('上传与待清理'), usage.pending],
+              ].map(([label, value]) => (
+                <div key={String(label)}>
+                  <span>{t(String(label))}</span>
+                  <strong>{bytes(Number(value))}</strong>
+                </div>
+              ))}
+            </div>
+            <p className="muted small">
+              {usage.notes} {t('条内容 ·')}
+              {usage.attachments} {t('个附件。')}
+            </p>
+          </Modal>
+        )}
+      </MotionPresence>
+      <MotionPresence>
+        {modal === 'trash' && active && (
+          <Modal title={t('永久删除这条内容？')} onClose={() => setModal(null)}>
+            <p className="muted">
+              “{active.content.title || t('未命名内容')}
+              {t('”及其附件将永久删除，无法从回收站恢复。')}
+            </p>
+            <div className="modal-actions">
+              <button className="button secondary" onClick={() => setModal(null)}>
+                {t('取消')}
+              </button>
+              <button
+                className="button danger-fill"
+                onClick={async () => {
+                  try {
+                    await api(`/notes/${active.id}`, { method: 'DELETE' });
+                    setSelected(null);
+                    setModal(null);
+                    await load(unlocked);
+                  } catch (e) {
+                    showError(e);
+                  }
+                }}
+              >
+                {t('永久删除')}
+              </button>
+            </div>
+          </Modal>
+        )}
+      </MotionPresence>
+      <MotionPresence>
+        {modal === 'profile' && (
+          <ProfileEditor
+            vaultKey={unlocked.key}
+            email={unlocked.info.vault.username}
+            profile={profile}
+            avatar={avatar}
+            onClose={() => setModal(null)}
+            onSaved={(record, content) => {
+              setProfile({ record, content });
+              setSyncedAt(Date.now());
+              setModal(null);
+              void refreshFiles().catch(showError);
+            }}
+          />
+        )}
+      </MotionPresence>
+      <MotionPresence>
+        {modal === 'settings' && (
+          <SettingsModal
+            unlocked={unlocked}
+            raw={rawKey.current!}
+            notes={notes}
+            onClose={() => setModal(null)}
+            onError={showError}
+            onLogout={() => void lock('账号设置已更新，请重新登录。')}
+            onImported={() => load(unlocked)}
+          />
+        )}
+      </MotionPresence>
       <span className="sr-only" aria-live="polite">
         {t(saveState)}
       </span>
@@ -2044,6 +2109,8 @@ function SettingsModal({
   onImported: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<'devices' | 'security' | 'backup'>('devices');
+  const tabPanel = useRef<HTMLDivElement>(null);
+  useMotionSwitch(tabPanel, tab);
   const [devices, setDevices] = useState<Device[]>([]);
   const [busy, setBusy] = useState('');
   const [oldPassword, setOldPassword] = useState('');
@@ -2289,194 +2356,196 @@ function SettingsModal({
           </button>
         ))}
       </div>
-      {tab === 'devices' && (
-        <>
-          <p className="muted small">
-            {t(
-              '可信设备在固定 14 天内免输密码，到期后需要重新登录。撤销后将阻止该设备后续在线访问。',
-            )}
-          </p>
-          <div className="device-list">
-            {devices.map((d) => (
-              <div key={d.id} className="device-row">
-                <span className="device-icon">
-                  <Monitor size={22} />
-                </span>
-                <div>
-                  <strong>
-                    {d.label}
-                    {d.current && <span className="tag">{t('当前设备')}</span>}
-                  </strong>
-                  <small>
-                    {d.trusted ? t('可信设备') : t('临时会话')} {t('· 最近访问')}
-                    {date(d.last_seen)}
-                  </small>
-                  <small>
-                    {t('到期')}
-                    {date(d.expires_at)}
-                  </small>
+      <div className="settings-tab-panel" ref={tabPanel}>
+        {tab === 'devices' && (
+          <>
+            <p className="muted small">
+              {t(
+                '可信设备在固定 14 天内免输密码，到期后需要重新登录。撤销后将阻止该设备后续在线访问。',
+              )}
+            </p>
+            <div className="device-list">
+              {devices.map((d) => (
+                <div key={d.id} className="device-row">
+                  <span className="device-icon">
+                    <Monitor size={22} />
+                  </span>
+                  <div>
+                    <strong>
+                      {d.label}
+                      {d.current && <span className="tag">{t('当前设备')}</span>}
+                    </strong>
+                    <small>
+                      {d.trusted ? t('可信设备') : t('临时会话')} {t('· 最近访问')}
+                      {date(d.last_seen)}
+                    </small>
+                    <small>
+                      {t('到期')}
+                      {date(d.expires_at)}
+                    </small>
+                  </div>
+                  <button
+                    className="text-button danger"
+                    onClick={() => setRevoke(d)}
+                    disabled={!!busy}
+                  >
+                    {t('退出')}
+                  </button>
                 </div>
-                <button
-                  className="text-button danger"
-                  onClick={() => setRevoke(d)}
-                  disabled={!!busy}
-                >
-                  {t('退出')}
-                </button>
-              </div>
-            ))}
-          </div>
-          <button
-            className="button secondary full"
-            disabled={!!busy}
-            onClick={() => setRevoke('all')}
-          >
-            <LogOut size={16} />
-            {t('退出所有设备')}
-          </button>
-          {revoke && (
-            <div className="inline-confirm">
-              {revoke === 'all'
-                ? t('包括当前设备，全部退出？')
-                : t('撤销 {device} 的访问？', { device: revoke.label })}
-              <button
-                className="text-button danger"
-                onClick={async () => {
-                  setBusy('正在撤销…');
-                  try {
-                    if (revoke === 'all') {
-                      await post('/devices/revoke-all');
-                      onLogout();
-                    } else {
-                      await api(`/devices/${revoke.id}`, { method: 'DELETE' });
-                      if (revoke.current) onLogout();
-                      else await reload();
-                    }
-                    setRevoke(null);
-                  } catch (e) {
-                    onError(e);
-                  } finally {
-                    setBusy('');
-                  }
-                }}
-              >
-                {t('确认退出')}
-              </button>
-              <button className="text-button" onClick={() => setRevoke(null)}>
-                {t('取消')}
-              </button>
+              ))}
             </div>
-          )}
-        </>
-      )}
-      {tab === 'security' && (
-        <>
-          <div className="account-info">
-            <ShieldCheck size={20} />
-            <div>
-              <strong>{unlocked.info.vault.username}</strong>
-              <small>{t('个人空间 · 不开放注册')}</small>
-            </div>
-          </div>
-          <form onSubmit={changePassword}>
-            <label className="field">
-              <span>{t('当前密码')}</span>
-              <input
-                required
-                type="password"
-                autoComplete="current-password"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span>{t('新密码')}</span>
-              <input
-                required
-                minLength={14}
-                type="password"
-                autoComplete="new-password"
-                placeholder={t('至少 14 个字符')}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span>{t('确认新密码')}</span>
-              <input
-                required
-                type="password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-              />
-            </label>
-            <p className="muted small">
-              {t(
-                '修改密码将退出所有设备。原恢复密钥仍然有效；旧备份仍需导出时的密码。若怀疑密码已泄露，还需轮换数据密钥，当前版本尚未提供此操作。',
-              )}
-            </p>
-            <button className="button primary" disabled={!!busy}>
-              {t('更新密码并退出')}
-            </button>
-          </form>
-        </>
-      )}
-      {tab === 'backup' && (
-        <>
-          <div className="backup-section">
-            <h3>
-              <Download size={18} />
-              {t('导出备份')}
-            </h3>
-            <p className="muted small">
-              {t(
-                '包含所有条目、文件和回收站。恢复时需要导出当时的密码；较大的备份可能受设备内存限制。',
-              )}
-            </p>
             <button
               className="button secondary full"
               disabled={!!busy}
-              onClick={() => void exportBackup()}
+              onClick={() => setRevoke('all')}
             >
-              {t('下载空间备份')}
+              <LogOut size={16} />
+              {t('退出所有设备')}
             </button>
-          </div>
-          <div className="backup-section">
-            <h3>
-              <Upload size={18} />
-              {t('从备份导入')}
-            </h3>
-            <p className="muted small">
-              {t('导入为新副本，不覆盖现有内容。网络中断时可能部分完成，请查看提示后再重试。')}
-            </p>
-            <form onSubmit={importBackup}>
+            {revoke && (
+              <div className="inline-confirm">
+                {revoke === 'all'
+                  ? t('包括当前设备，全部退出？')
+                  : t('撤销 {device} 的访问？', { device: revoke.label })}
+                <button
+                  className="text-button danger"
+                  onClick={async () => {
+                    setBusy('正在撤销…');
+                    try {
+                      if (revoke === 'all') {
+                        await post('/devices/revoke-all');
+                        onLogout();
+                      } else {
+                        await api(`/devices/${revoke.id}`, { method: 'DELETE' });
+                        if (revoke.current) onLogout();
+                        else await reload();
+                      }
+                      setRevoke(null);
+                    } catch (e) {
+                      onError(e);
+                    } finally {
+                      setBusy('');
+                    }
+                  }}
+                >
+                  {t('确认退出')}
+                </button>
+                <button className="text-button" onClick={() => setRevoke(null)}>
+                  {t('取消')}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {tab === 'security' && (
+          <>
+            <div className="account-info">
+              <ShieldCheck size={20} />
+              <div>
+                <strong>{unlocked.info.vault.username}</strong>
+                <small>{t('个人空间 · 不开放注册')}</small>
+              </div>
+            </div>
+            <form onSubmit={changePassword}>
               <label className="field">
-                <span>{t('备份文件')}</span>
-                <input
-                  type="file"
-                  accept=".cmbackup,.json"
-                  required
-                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                />
-              </label>
-              <label className="field">
-                <span>{t('备份导出时的密码')}</span>
+                <span>{t('当前密码')}</span>
                 <input
                   required
                   type="password"
-                  autoComplete="off"
-                  value={backupPassword}
-                  onChange={(e) => setBackupPassword(e.target.value)}
+                  autoComplete="current-password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
                 />
               </label>
-              <button className="button primary full" disabled={!!busy || !importFile}>
-                {t('验证并导入备份')}
+              <label className="field">
+                <span>{t('新密码')}</span>
+                <input
+                  required
+                  minLength={14}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={t('至少 14 个字符')}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>{t('确认新密码')}</span>
+                <input
+                  required
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                />
+              </label>
+              <p className="muted small">
+                {t(
+                  '修改密码将退出所有设备。原恢复密钥仍然有效；旧备份仍需导出时的密码。若怀疑密码已泄露，还需轮换数据密钥，当前版本尚未提供此操作。',
+                )}
+              </p>
+              <button className="button primary" disabled={!!busy}>
+                {t('更新密码并退出')}
               </button>
             </form>
-          </div>
-        </>
-      )}
+          </>
+        )}
+        {tab === 'backup' && (
+          <>
+            <div className="backup-section">
+              <h3>
+                <Download size={18} />
+                {t('导出备份')}
+              </h3>
+              <p className="muted small">
+                {t(
+                  '包含所有条目、文件和回收站。恢复时需要导出当时的密码；较大的备份可能受设备内存限制。',
+                )}
+              </p>
+              <button
+                className="button secondary full"
+                disabled={!!busy}
+                onClick={() => void exportBackup()}
+              >
+                {t('下载空间备份')}
+              </button>
+            </div>
+            <div className="backup-section">
+              <h3>
+                <Upload size={18} />
+                {t('从备份导入')}
+              </h3>
+              <p className="muted small">
+                {t('导入为新副本，不覆盖现有内容。网络中断时可能部分完成，请查看提示后再重试。')}
+              </p>
+              <form onSubmit={importBackup}>
+                <label className="field">
+                  <span>{t('备份文件')}</span>
+                  <input
+                    type="file"
+                    accept=".cmbackup,.json"
+                    required
+                    onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  />
+                </label>
+                <label className="field">
+                  <span>{t('备份导出时的密码')}</span>
+                  <input
+                    required
+                    type="password"
+                    autoComplete="off"
+                    value={backupPassword}
+                    onChange={(e) => setBackupPassword(e.target.value)}
+                  />
+                </label>
+                <button className="button primary full" disabled={!!busy || !importFile}>
+                  {t('验证并导入备份')}
+                </button>
+              </form>
+            </div>
+          </>
+        )}
+      </div>
       {busy && (
         <div className="notice">
           <Spinner />
