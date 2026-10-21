@@ -1,0 +1,2 @@
+# Set your own random value with at least 32 characters. Never commit .dev.vars.
+SETUP_TOKEN=

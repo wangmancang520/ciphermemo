@@ -1,0 +1,43 @@
+{
+  "name": "ciphermemo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:api": "wrangler dev --port 8787",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "npm run build && wrangler deploy",
+    "cf:deploy": "wrangler deploy",
+    "setup:local": "node scripts/setup-local.mjs",
+    "format": "prettier --write src tests scripts package.json tsconfig.json vite.config.ts vitest.config.ts wrangler.jsonc .github README.md .prettierrc.json index.html"
+  },
+  "dependencies": {
+    "dompurify": "^3.3.0",
+    "hash-wasm": "^4.12.0",
+    "hono": "^4.10.0",
+    "idb": "^8.0.3",
+    "lucide-react": "^0.468.0",
+    "marked": "^16.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261021.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "miniflare": "5.20261019.1-beta",
+    "prettier": "3.9.10",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.0.0"
+  }
+}

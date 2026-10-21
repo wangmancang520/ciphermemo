@@ -1,0 +1,2285 @@
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+  type FormEvent,
+} from 'react';
+import {
+  LockKeyhole,
+  ShieldCheck,
+  Plus,
+  Search,
+  FileText,
+  KeyRound,
+  Ticket,
+  FolderOpen,
+  Pin,
+  Trash2,
+  Settings,
+  LogOut,
+  ArrowLeft,
+  ArrowUpRight,
+  Paperclip,
+  Download,
+  Eye,
+  EyeOff,
+  Check,
+  Copy,
+  X,
+  Pencil,
+  Monitor,
+  ChevronRight,
+  Cloud,
+  LoaderCircle,
+  RotateCcw,
+  HardDrive,
+  Upload,
+  Menu,
+  Lock,
+  File,
+  CheckCheck,
+} from 'lucide-react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import { api, post, ApiError } from './api';
+import * as crypt from './crypto';
+import { forgetDevice, rememberDevice, rememberedDevice } from './trust';
+import { fileBlob, saveBlob, uploadFile, fileBackup } from './files';
+import type {
+  Attachment,
+  AttachmentMeta,
+  Device,
+  Kdf,
+  NoteContent,
+  NoteKind,
+  NoteRecord,
+  OpenNote,
+  SessionInfo,
+  Usage,
+  VaultHeader,
+} from '../shared/types';
+
+type Unlocked = { key: CryptoKey; info: SessionInfo };
+type Filter = 'all' | 'pinned' | 'trash' | NoteKind;
+const kinds: Record<NoteKind, { name: string; icon: typeof FileText; color: string }> = {
+  note: { name: '备忘录', icon: FileText, color: 'blue' },
+  credential: { name: '账号密码', icon: KeyRound, color: 'amber' },
+  license: { name: '激活密钥', icon: Ticket, color: 'violet' },
+  file: { name: '文件', icon: FolderOpen, color: 'green' },
+};
+export const bytes = (n: number) =>
+  n < 1024
+    ? `${n} B`
+    : n < 1024 ** 2
+      ? `${(n / 1024).toFixed(1)} KB`
+      : n < 1024 ** 3
+        ? `${(n / 1024 ** 2).toFixed(1)} MB`
+        : `${(n / 1024 ** 3).toFixed(2)} GB`;
+const date = (n: number) =>
+  new Intl.DateTimeFormat('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(n);
+const deviceLabel = () =>
+  `${/Android|iPhone|iPad/.test(navigator.userAgent) ? '移动设备' : '电脑'} · ${navigator.userAgent.includes('Edg/') ? 'Edge' : navigator.userAgent.includes('Firefox/') ? 'Firefox' : navigator.userAgent.includes('Chrome/') ? 'Chrome' : 'Safari'}`;
+const newContent = (kind: NoteKind): NoteContent => ({
+  title: '',
+  body: '',
+  tags: [],
+  kind,
+  username: '',
+  password: '',
+  url: '',
+  license: '',
+});
+function message(e: unknown) {
+  return e instanceof Error ? e.message : '操作失败，请重试';
+}
+function Spinner() {
+  return <LoaderCircle size={17} className="spin" />;
+}
+function Brand() {
+  return (
+    <div className="brand">
+      <span className="brand-icon">
+        <LockKeyhole size={20} />
+      </span>
+      <span>
+        CipherMemo<small>你的私人加密空间</small>
+      </span>
+    </div>
+  );
+}
+function Modal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const old = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRef.current();
+      if (e.key === 'Tab') {
+        const items = ref.current?.querySelectorAll<HTMLElement>(
+          'button,input,select,textarea,a[href]',
+        );
+        if (!items?.length) return;
+        const first = items[0],
+          last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('keydown', key);
+      old?.focus();
+    };
+  }, []);
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="modal"
+        ref={ref}
+        tabIndex={-1}
+      >
+        <div className="modal-head">
+          <h2>{title}</h2>
+          <button className="icon-button" aria-label="关闭" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+function SecretField({
+  label,
+  value,
+  onChange,
+  large = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (s: string) => void;
+  large?: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    const t = setTimeout(() => setVisible(false), 20000);
+    return () => clearTimeout(t);
+  }, [visible]);
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <div className={`secret-input ${large ? 'large' : ''}`}>
+        <input
+          autoComplete="off"
+          spellCheck={false}
+          type={visible ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={visible ? '隐藏内容' : '显示内容'}
+          onClick={() => setVisible(!visible)}
+        >
+          {visible ? <EyeOff size={17} /> : <Eye size={17} />}
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`复制${label}`}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {
+              setVisible(true);
+            }
+          }}
+        >
+          {copied ? <Check size={17} /> : <Copy size={17} />}
+        </button>
+      </div>
+    </label>
+  );
+}
+function Auth({
+  initialized,
+  setupAvailable,
+  onUnlock,
+  notice,
+}: {
+  initialized: boolean;
+  setupAvailable: boolean;
+  onUnlock: (u: Unlocked, raw: Uint8Array<ArrayBuffer>) => void;
+  notice: string;
+}) {
+  const [mode, setMode] = useState<'login' | 'setup' | 'recover'>(initialized ? 'login' : 'setup');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [setupToken, setSetupToken] = useState('');
+  const [recovery, setRecovery] = useState('');
+  const [trusted, setTrusted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [created, setCreated] = useState<{
+    u: Unlocked;
+    raw: Uint8Array<ArrayBuffer>;
+    recovery: string;
+  } | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      if (mode === 'login') {
+        const { kdf } = await api<{ kdf: Kdf }>('/auth/params');
+        const material = await crypt.derive(password, kdf);
+        const info = await post<SessionInfo>('/auth/login', {
+          username: username.trim(),
+          auth: material.auth,
+          trusted,
+          label: deviceLabel(),
+        });
+        let raw: Uint8Array<ArrayBuffer>;
+        try {
+          raw = await crypt.openBytes(material.wrapping, info.vault.wrappedKey, 'vault-key');
+        } catch {
+          await post('/auth/logout');
+          throw new Error('无法解密空间，请使用恢复密钥恢复');
+        }
+        const key = await crypt.importKey(raw);
+        await forgetDevice();
+        if (trusted) {
+          try {
+            await rememberDevice(raw, info);
+          } catch {
+            await post('/auth/logout');
+            raw.fill(0);
+            throw new Error('浏览器无法保存可信设备，请取消勾选后登录');
+          }
+        }
+        setPassword('');
+        onUnlock({ key, info }, raw);
+      } else {
+        crypt.validatePassword(password);
+        if (password !== confirm) throw new Error('两次输入的密码不一致');
+        const kdf = crypt.newKdf();
+        const material = await crypt.derive(password, kdf);
+        if (mode === 'setup') {
+          const raw = crypt.random();
+          const recovery = `cmr1-${crypt.base64(crypt.random())}`;
+          const r = await crypt.recoveryMaterials(recovery);
+          const [wrappedKey, recoveryWrappedKey] = await Promise.all([
+            crypt.sealBytes(material.wrapping, raw, 'vault-key'),
+            crypt.sealBytes(r.wrapping, raw, 'recovery-vault-key'),
+          ]);
+          const info = await post<SessionInfo>('/setup', {
+            setupToken,
+            username: username.trim(),
+            auth: material.auth,
+            kdf,
+            wrappedKey,
+            recoveryAuth: r.auth,
+            recoveryWrappedKey,
+            label: deviceLabel(),
+          });
+          setCreated({ u: { key: await crypt.importKey(raw), info }, raw, recovery });
+          setPassword('');
+          setConfirm('');
+          setSetupToken('');
+        } else {
+          const r = await crypt.recoveryMaterials(recovery);
+          const { recoveryWrappedKey } = await post<{
+            recoveryWrappedKey: VaultHeader['recoveryWrappedKey'];
+          }>('/auth/recovery-key', { username: username.trim(), recoveryAuth: r.auth });
+          const raw = await crypt.openBytes(r.wrapping, recoveryWrappedKey, 'recovery-vault-key');
+          const wrappedKey = await crypt.sealBytes(material.wrapping, raw, 'vault-key');
+          raw.fill(0);
+          await post('/auth/recover', {
+            username: username.trim(),
+            recoveryAuth: r.auth,
+            auth: material.auth,
+            kdf,
+            wrappedKey,
+          });
+          await forgetDevice();
+          setRecovery('');
+          setPassword('');
+          setConfirm('');
+          setMode('login');
+          setSuccess('密码已重设，所有设备已退出，请使用新密码登录。');
+        }
+      }
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="auth-page">
+      <header>
+        <Brand />
+        <span className="version">PERSONAL VAULT · V0.1</span>
+      </header>
+      <main className="auth-layout">
+        <section className="auth-intro">
+          <div className="eyebrow">
+            <span /> 只属于你的数字空间
+          </div>
+          <h1>
+            重要的事，
+            <br />
+            安心放在这里<span>。</span>
+          </h1>
+          <p>
+            从一闪而过的想法，到需要妥善保管的密码。
+            <br />
+            让文字、密钥和文件，都有一个私密的归处。
+          </p>
+          <div className="intro-features">
+            <div>
+              <ShieldCheck size={20} />
+              <span>
+                上传前加密<small>明文只在你的浏览器中出现</small>
+              </span>
+            </div>
+            <div>
+              <Cloud size={20} />
+              <span>
+                随时取用<small>一组账号密码，连接你的设备</small>
+              </span>
+            </div>
+            <div>
+              <HardDrive size={20} />
+              <span>
+                自在保存<small>文本、图片、文件，无应用容量配额</small>
+              </span>
+            </div>
+          </div>
+          <div className="intro-decoration" aria-hidden="true">
+            <div className="deco-line" />
+            <LockKeyhole size={28} />
+            <span>YOUR THOUGHTS. YOUR KEYS.</span>
+          </div>
+        </section>
+        <section className="auth-card">
+          {created ? (
+            <>
+              <div className="card-symbol">
+                <KeyRound />
+              </div>
+              <h2>先保存你的恢复密钥</h2>
+              <p className="muted">忘记密码时，它是恢复内容的唯一方式。请保存在这个空间之外。</p>
+              <code className="recovery-code">{created.recovery}</code>
+              <button
+                className="button secondary full"
+                onClick={() => {
+                  saveBlob(
+                    new Blob(
+                      [
+                        `CipherMemo 恢复密钥\n用户名：${created.u.info.vault.username}\n地址：${location.origin}\n恢复密钥：${created.recovery}\n请离线安全保存，不要上传到本空间。`,
+                      ],
+                      { type: 'text/plain;charset=utf-8' },
+                    ),
+                    'ciphermemo-recovery.txt',
+                  );
+                  setDownloaded(true);
+                }}
+              >
+                <Download size={17} />
+                下载恢复密钥
+              </button>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={downloaded}
+                  onChange={(e) => setDownloaded(e.target.checked)}
+                />
+                我已将恢复密钥保存在安全位置
+              </label>
+              <button
+                className="button primary full"
+                disabled={!downloaded}
+                onClick={() => onUnlock(created.u, created.raw)}
+              >
+                进入我的空间
+                <ArrowUpRight size={17} />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="card-symbol">
+                <LockKeyhole />
+              </div>
+              <h2>
+                {mode === 'setup'
+                  ? '创建你的私人空间'
+                  : mode === 'recover'
+                    ? '恢复空间访问'
+                    : '欢迎回来'}
+              </h2>
+              <p className="muted">
+                {mode === 'setup'
+                  ? '仅需初始化一次，之后使用账号密码登录。'
+                  : mode === 'recover'
+                    ? '使用离线恢复密钥设置新密码。'
+                    : '解锁你的备忘录、密码与文件。'}
+              </p>
+              {notice && <div className="notice">{notice}</div>}
+              {success && <div className="notice">{success}</div>}
+              {mode === 'setup' && !setupAvailable && (
+                <div className="error">
+                  请先在 Cloudflare 设置至少 32 字符的 SETUP_TOKEN，再初始化空间。
+                </div>
+              )}
+              <form onSubmit={submit}>
+                {mode === 'setup' && (
+                  <label className="field">
+                    <span>部署初始化口令</span>
+                    <input
+                      type="password"
+                      required
+                      autoComplete="off"
+                      value={setupToken}
+                      onChange={(e) => setSetupToken(e.target.value)}
+                    />
+                  </label>
+                )}
+                <label className="field">
+                  <span>用户名</span>
+                  <input
+                    required
+                    name="username"
+                    autoComplete="username"
+                    placeholder="输入你的用户名"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </label>
+                {mode === 'recover' && (
+                  <label className="field">
+                    <span>恢复密钥</span>
+                    <input
+                      required
+                      type="password"
+                      autoComplete="off"
+                      placeholder="cmr1-…"
+                      value={recovery}
+                      onChange={(e) => setRecovery(e.target.value)}
+                    />
+                  </label>
+                )}
+                <label className="field">
+                  <span>{mode === 'recover' ? '新密码' : '密码'}</span>
+                  <input
+                    required
+                    name="password"
+                    type="password"
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    placeholder={mode === 'login' ? '输入你的密码' : '至少 14 个字符的长口令'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </label>
+                {mode !== 'login' && (
+                  <label className="field">
+                    <span>确认密码</span>
+                    <input
+                      required
+                      type="password"
+                      autoComplete="new-password"
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                    />
+                  </label>
+                )}
+                {mode === 'login' && (
+                  <>
+                    <label className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={trusted}
+                        onChange={(e) => setTrusted(e.target.checked)}
+                      />
+                      信任此设备，14 天内免输密码
+                    </label>
+                    <p className="field-help">仅在自己的设备上勾选。陌生设备请保持关闭。</p>
+                  </>
+                )}
+                {error && (
+                  <div role="alert" className="error">
+                    {error}
+                  </div>
+                )}
+                <button
+                  className="button primary full"
+                  disabled={busy || (mode === 'setup' && !setupAvailable)}
+                >
+                  {busy ? (
+                    <>
+                      <Spinner />
+                      正在安全处理…
+                    </>
+                  ) : (
+                    <>
+                      {mode === 'login'
+                        ? '解锁我的空间'
+                        : mode === 'recover'
+                          ? '重设密码'
+                          : '创建加密空间'}
+                      <ArrowUpRight size={17} />
+                    </>
+                  )}
+                </button>
+              </form>
+              {initialized && (
+                <button
+                  className="text-button auth-switch"
+                  onClick={() => {
+                    setMode(mode === 'login' ? 'recover' : 'login');
+                    setError('');
+                  }}
+                >
+                  {mode === 'login' ? '忘记密码？使用恢复密钥' : '返回账号密码登录'}
+                </button>
+              )}
+              <div className="auth-security">
+                <ShieldCheck size={14} />
+                浏览器内加密 · 密码不会明文上传
+              </div>
+            </>
+          )}
+        </section>
+      </main>
+      <footer className="auth-footer">
+        <span>一处私密空间，收好你的数字生活。</span>
+        <span>由 Cloudflare Workers 驱动</span>
+      </footer>
+    </div>
+  );
+}
+
+type PendingDraft = { id: string; payload: NoteRecord['payload'] };
+type EditorHandle = { flush: () => Promise<void>; capture: () => Promise<PendingDraft | null> };
+const Editor = forwardRef<
+  EditorHandle,
+  {
+    note: OpenNote;
+    vaultKey: CryptoKey;
+    attachments: Attachment[];
+    onSaved: (n: OpenNote) => void;
+    onFilesChanged: () => Promise<void>;
+    onError: (e: unknown) => void;
+    onState: (s: string) => void;
+    onTrash: () => void;
+    onCopy: (content: NoteContent) => void;
+  }
+>(function Editor(
+  { note, vaultKey, attachments, onSaved, onFilesChanged, onError, onState, onTrash, onCopy },
+  ref,
+) {
+  const [draft, setDraft] = useState(note.content);
+  const [tagsText, setTagsText] = useState(note.content.tags.join(', '));
+  const [preview, setPreview] = useState(false);
+  const [uploading, setUploading] = useState('');
+  const draftRef = useRef(draft);
+  const recordRef = useRef(note);
+  const savedRef = useRef(JSON.stringify(note.content));
+  const task = useRef<Promise<void> | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [state, setState] = useState('已保存');
+  const [conflict, setConflict] = useState(false);
+  const change = (partial: Partial<NoteContent>) => {
+    const next = { ...draftRef.current, ...partial };
+    draftRef.current = next;
+    setDraft(next);
+    setState('尚未保存');
+    onState('尚未保存');
+  };
+  const flush = useCallback(async () => {
+    if (timer.current) clearTimeout(timer.current);
+    if (task.current) return task.current;
+    const work = async () => {
+      while (JSON.stringify(draftRef.current) !== savedRef.current) {
+        const snapshot = structuredClone(draftRef.current);
+        const stamp = JSON.stringify(snapshot);
+        const current = recordRef.current;
+        setState('保存中');
+        onState('保存中');
+        try {
+          const payload = await crypt.seal(vaultKey, snapshot, `note:${current.id}`);
+          const stored = await api<NoteRecord>(`/notes/${current.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ payload, revision: current.revision, pinned: current.pinned }),
+          });
+          const n = { ...stored, content: snapshot };
+          recordRef.current = n;
+          savedRef.current = stamp;
+          onSaved(n);
+          setState('已保存');
+          onState('已保存');
+        } catch (e) {
+          setState('保存失败');
+          onState('保存失败');
+          if (e instanceof ApiError && e.status === 409) setConflict(true);
+          throw e;
+        }
+      }
+    };
+    task.current = work().finally(() => {
+      task.current = null;
+    });
+    return task.current;
+  }, [vaultKey, onSaved, onState]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      flush,
+      capture: async () =>
+        JSON.stringify(draftRef.current) === savedRef.current
+          ? null
+          : {
+              id: note.id,
+              payload: await crypt.seal(vaultKey, draftRef.current, `note:${note.id}`),
+            },
+    }),
+    [flush, note.id, vaultKey],
+  );
+  useEffect(() => {
+    if (JSON.stringify(draft) === savedRef.current) return;
+    timer.current = setTimeout(() => {
+      flush().catch(onError);
+    }, 900);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [draft, flush, onError]);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (JSON.stringify(draftRef.current) !== savedRef.current || task.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
+  async function upload(files: FileList | File[] | null) {
+    if (!files?.length) return;
+    try {
+      await flush();
+      for (const file of Array.from(files)) {
+        setUploading(`${file.name} · 0%`);
+        await uploadFile(vaultKey, note.id, file, (p) => setUploading(`${file.name} · ${p}%`));
+      }
+      await onFilesChanged();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setUploading('');
+    }
+  }
+  const KIcon = kinds[draft.kind].icon;
+  const content = DOMPurify.sanitize(marked.parse(draft.body, { async: false }) as string, {
+    FORBID_TAGS: ['img', 'style', 'input', 'form'],
+    FORBID_ATTR: ['style'],
+  });
+  return (
+    <article
+      className="editor"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        void upload(Array.from(e.dataTransfer.files));
+      }}
+    >
+      <div className="editor-toolbar">
+        <div className={`kind-label ${kinds[draft.kind].color}`}>
+          <KIcon size={15} />
+          {kinds[draft.kind].name}
+        </div>
+        <div className="toolbar-actions">
+          <span className={`save-status ${state === '保存失败' ? 'bad' : ''}`}>
+            {state === '保存中' ? <Spinner /> : <Check size={13} />}
+            <span>{state}</span>
+          </span>
+          <button
+            className="icon-button"
+            aria-label={recordRef.current.pinned ? '取消置顶' : '置顶'}
+            onClick={async () => {
+              try {
+                await flush();
+                const current = recordRef.current;
+                const stored = await api<NoteRecord>(`/notes/${note.id}`, {
+                  method: 'PUT',
+                  body: JSON.stringify({
+                    payload: current.payload,
+                    revision: current.revision,
+                    pinned: !current.pinned,
+                  }),
+                });
+                recordRef.current = { ...stored, content: draftRef.current };
+                onSaved(recordRef.current);
+              } catch (e) {
+                onError(e);
+              }
+            }}
+          >
+            <Pin size={17} fill={recordRef.current.pinned ? 'currentColor' : 'none'} />
+          </button>
+          <button
+            className="icon-button danger"
+            aria-label="移入回收站"
+            onClick={async () => {
+              try {
+                await flush();
+                onTrash();
+              } catch (e) {
+                onError(e);
+              }
+            }}
+          >
+            <Trash2 size={17} />
+          </button>
+        </div>
+      </div>
+      <div className="editor-main">
+        <input
+          className="title-input"
+          aria-label="标题"
+          placeholder="给这条内容一个名字"
+          value={draft.title}
+          onChange={(e) => change({ title: e.target.value })}
+        />
+        <div className="editor-date">
+          创建于 {date(note.created_at)}
+          <span>·</span>仅你可见
+        </div>
+        {draft.kind === 'credential' && (
+          <div className="credential-fields">
+            <label className="field">
+              <span>网站地址</span>
+              <input
+                value={draft.url || ''}
+                placeholder="https://example.com"
+                onChange={(e) => change({ url: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>用户名 / 邮箱</span>
+              <div className="secret-input">
+                <input
+                  value={draft.username || ''}
+                  autoComplete="off"
+                  onChange={(e) => change({ username: e.target.value })}
+                />
+                <button
+                  className="icon-button"
+                  aria-label="复制用户名"
+                  onClick={() => navigator.clipboard.writeText(draft.username || '').catch(onError)}
+                >
+                  <Copy size={17} />
+                </button>
+              </div>
+            </label>
+            <SecretField
+              label="密码"
+              value={draft.password || ''}
+              onChange={(password) => change({ password })}
+            />
+          </div>
+        )}
+        {draft.kind === 'license' && (
+          <div className="credential-fields">
+            <SecretField
+              label="激活密钥"
+              value={draft.license || ''}
+              onChange={(license) => change({ license })}
+              large
+            />
+            <label className="field">
+              <span>产品网址</span>
+              <input
+                value={draft.url || ''}
+                placeholder="可选"
+                onChange={(e) => change({ url: e.target.value })}
+              />
+            </label>
+          </div>
+        )}
+        <div className="body-head">
+          <span>{draft.kind === 'note' ? '正文' : '备注'}</span>
+          <div className="segmented">
+            <button className={!preview ? 'active' : ''} onClick={() => setPreview(false)}>
+              编辑
+            </button>
+            <button className={preview ? 'active' : ''} onClick={() => setPreview(true)}>
+              预览
+            </button>
+          </div>
+        </div>
+        {preview ? (
+          <div
+            className="markdown"
+            dangerouslySetInnerHTML={{ __html: content || '<p>还没有内容。</p>' }}
+          />
+        ) : (
+          <textarea
+            className="body-input"
+            aria-label="正文"
+            placeholder={'写下值得保存的内容…\n\n支持 Markdown，也可以粘贴图片或拖入文件。'}
+            value={draft.body}
+            onChange={(e) => change({ body: e.target.value })}
+            onPaste={(e) => {
+              const fs = Array.from(e.clipboardData.files);
+              if (fs.length) {
+                e.preventDefault();
+                void upload(fs);
+              }
+            }}
+          />
+        )}
+        <label className="tags-field">
+          <span>标签</span>
+          <input
+            aria-label="标签"
+            value={tagsText}
+            placeholder="用逗号分隔，例如：工作, 重要"
+            onChange={(e) => {
+              setTagsText(e.target.value);
+              change({
+                tags: [
+                  ...new Set(
+                    e.target.value
+                      .split(/[,，]/)
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  ),
+                ],
+              });
+            }}
+          />
+        </label>
+        <div className="attachments-head">
+          <span>
+            <Paperclip size={15} />
+            附件 <small>{attachments.length}</small>
+          </span>
+          <label className={`text-button upload-button ${uploading ? 'disabled' : ''}`}>
+            <Plus size={14} />
+            添加文件
+            <input
+              type="file"
+              multiple
+              disabled={!!uploading}
+              onChange={(e) => {
+                void upload(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+        {uploading && (
+          <div role="status" className="upload-progress">
+            <Spinner />
+            正在加密上传：{uploading}
+          </div>
+        )}
+        <div className="attachment-list">
+          {attachments.map((a) => (
+            <AttachmentCard
+              key={a.id}
+              attachment={a}
+              vaultKey={vaultKey}
+              onError={onError}
+              onRenamed={onFilesChanged}
+              onDelete={async () => {
+                await api(`/attachments/${a.id}`, { method: 'DELETE' });
+                await onFilesChanged();
+              }}
+            />
+          ))}
+        </div>
+        {!attachments.length && !uploading && (
+          <label className="drop-zone">
+            <Upload size={21} />
+            <span>拖入文件，或点击上传</span>
+            <small>上传前加密 · 保留原始文件</small>
+            <input
+              type="file"
+              multiple
+              onChange={(e) => {
+                void upload(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        )}
+        {state === '保存失败' && (
+          <div className="error">
+            <p>编辑内容仍保留在此页面，请勿关闭。</p>
+            <button className="button secondary" onClick={() => flush().catch(onError)}>
+              重试保存
+            </button>{' '}
+            <button className="button secondary" onClick={() => onCopy(draftRef.current)}>
+              {conflict ? '另存为副本' : '保存副本'}
+            </button>
+          </div>
+        )}
+      </div>
+      <footer className="editor-footer">
+        <ShieldCheck size={13} />
+        内容在浏览器内加密后保存<span>{draft.body.length.toLocaleString()} 字符</span>
+      </footer>
+    </article>
+  );
+});
+function AttachmentCard({
+  attachment: a,
+  vaultKey,
+  onError,
+  onDelete,
+  onRenamed,
+}: {
+  attachment: Attachment;
+  vaultKey: CryptoKey;
+  onError: (e: unknown) => void;
+  onDelete: () => Promise<void>;
+  onRenamed: () => Promise<void>;
+}) {
+  const [meta, setMeta] = useState<AttachmentMeta | null>(null);
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [rename, setRename] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    crypt
+      .open<AttachmentMeta>(vaultKey, a.metadata, `attachment:${a.id}`)
+      .then((m) => {
+        if (active) setMeta(m);
+      })
+      .catch(onError);
+    return () => {
+      active = false;
+    };
+  }, [a, vaultKey, onError]);
+  useEffect(
+    () => () => {
+      if (url) URL.revokeObjectURL(url);
+    },
+    [url],
+  );
+  return (
+    <div className={`attachment-card ${url ? 'with-preview' : ''}`}>
+      {url && <img src={url} alt={meta?.name || '图片预览'} />}
+      <div className="attachment-info">
+        <span className="file-symbol">
+          <File size={19} />
+        </span>
+        <div>
+          <strong>{meta?.name || '正在解密文件名…'}</strong>
+          <small>{meta ? bytes(meta.size) : '…'}</small>
+        </div>
+        <div className="file-actions">
+          <button
+            aria-label="重命名文件"
+            className="icon-button"
+            disabled={busy || !meta}
+            onClick={() => setRename(meta!.name)}
+          >
+            <Pencil size={15} />
+          </button>
+          {meta && /^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(meta.type) && !url && (
+            <button
+              aria-label="预览图片"
+              className="icon-button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const { blob } = await fileBlob(vaultKey, a);
+                  setUrl(URL.createObjectURL(blob));
+                } catch (e) {
+                  onError(e);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <Eye size={16} />
+            </button>
+          )}
+          <button
+            aria-label="下载文件"
+            className="icon-button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const { blob, meta } = await fileBlob(vaultKey, a);
+                saveBlob(blob, meta.name);
+              } catch (e) {
+                onError(e);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? <Spinner /> : <Download size={16} />}
+          </button>
+          <button
+            aria-label="删除附件"
+            className="icon-button danger"
+            onClick={() => setConfirm(true)}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+      {rename !== null && (
+        <form
+          className="rename-form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!meta || !rename.trim()) return;
+            setBusy(true);
+            try {
+              const updated = { ...meta, name: rename.trim() };
+              const metadata = await crypt.seal(vaultKey, updated, `attachment:${a.id}`);
+              await api(`/attachments/${a.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ metadata, previous: a.metadata }),
+              });
+              setMeta(updated);
+              setRename(null);
+              await onRenamed();
+            } catch (e) {
+              onError(e);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <input
+            aria-label="新文件名"
+            required
+            value={rename}
+            onChange={(e) => setRename(e.target.value)}
+          />
+          <button type="submit" className="text-button" disabled={busy}>
+            保存名称
+          </button>
+          <button type="button" className="text-button" onClick={() => setRename(null)}>
+            取消
+          </button>
+        </form>
+      )}
+      {confirm && (
+        <div className="inline-confirm">
+          永久删除此附件？
+          <button
+            className="text-button danger"
+            onClick={async () => {
+              try {
+                await onDelete();
+              } catch (e) {
+                onError(e);
+              } finally {
+                setConfirm(false);
+              }
+            }}
+          >
+            删除
+          </button>
+          <button className="text-button" onClick={() => setConfirm(false)}>
+            取消
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  const [status, setStatus] = useState<{ initialized: boolean; setupAvailable: boolean } | null>(
+    null,
+  );
+  const [unlocked, setUnlocked] = useState<Unlocked | null>(null);
+  const rawKey = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const [notes, setNotes] = useState<OpenNote[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [usage, setUsage] = useState<Usage | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [modal, setModal] = useState<'new' | 'settings' | 'usage' | 'trash' | null>(null);
+  const [saveState, setSaveState] = useState('已保存');
+  const [mobileSidebar, setMobileSidebar] = useState(false);
+  const editor = useRef<EditorHandle>(null);
+  const pendingDraft = useRef<PendingDraft | null>(null);
+  const gate = useRef(0);
+  const lastActivity = useRef(Date.now());
+  const showError = useCallback((e: unknown) => setError(message(e)), []);
+  const updateNote = useCallback(
+    (n: OpenNote) => setNotes((old) => old.map((x) => (x.id === n.id ? n : x))),
+    [],
+  );
+  const load = useCallback(
+    async (u: Unlocked) => {
+      const run = ++gate.current;
+      setBusy(true);
+      try {
+        const rows: NoteRecord[] = [];
+        let before = '',
+          cursorId = '';
+        while (true) {
+          const page = await api<NoteRecord[]>(
+            `/notes${before ? `?before=${before}&cursorId=${cursorId}` : ''}`,
+          );
+          rows.push(...page);
+          if (page.length < 100) break;
+          const last = page[page.length - 1];
+          before = String(last.updated_at);
+          cursorId = last.id;
+        }
+        const opened: OpenNote[] = [];
+        for (const n of rows)
+          opened.push({
+            ...n,
+            content: await crypt.open<NoteContent>(u.key, n.payload, `note:${n.id}`),
+          });
+        const [files, space] = await Promise.all([
+          api<Attachment[]>('/attachments'),
+          api<Usage>('/usage'),
+        ]);
+        if (gate.current !== run) return;
+        setNotes(opened);
+        setAttachments(files);
+        setUsage(space);
+      } catch (e) {
+        if (gate.current === run) showError(e);
+      } finally {
+        if (gate.current === run) setBusy(false);
+      }
+    },
+    [showError],
+  );
+  const refreshFiles = useCallback(async () => {
+    const run = gate.current;
+    const [files, space] = await Promise.all([
+      api<Attachment[]>('/attachments'),
+      api<Usage>('/usage'),
+    ]);
+    if (gate.current === run) {
+      setAttachments(files);
+      setUsage(space);
+    }
+  }, []);
+  function clearMemory() {
+    gate.current++;
+    rawKey.current?.fill(0);
+    rawKey.current = null;
+    setUnlocked(null);
+    setNotes([]);
+    setAttachments([]);
+    setUsage(null);
+    setSelected(null);
+    setModal(null);
+    setError('');
+    setBusy(false);
+  }
+  const lock = useCallback(async (reason = '空间已锁定。') => {
+    try {
+      const draft = await editor.current?.capture();
+      if (draft) {
+        pendingDraft.current = draft;
+        reason += ' 未保存的编辑已在当前页面内加密暂存，重新登录后将恢复为副本；请勿关闭页面。';
+      }
+    } catch {
+      reason += ' 未保存的编辑未能恢复。';
+    }
+    clearMemory();
+    setNotice(reason);
+    setStatus({ initialized: true, setupAvailable: false });
+    await forgetDevice().catch(() => {});
+    await post('/auth/logout', {}).catch(() => {});
+  }, []);
+  const unlock = useCallback(
+    (u: Unlocked, raw: Uint8Array<ArrayBuffer>) => {
+      rawKey.current = raw;
+      setUnlocked(u);
+      setStatus({ initialized: true, setupAvailable: false });
+      setNotice('');
+      setError('');
+      lastActivity.current = Date.now();
+      void (async () => {
+        const pending = pendingDraft.current;
+        if (pending) {
+          try {
+            const content = await crypt.open<NoteContent>(
+              u.key,
+              pending.payload,
+              `note:${pending.id}`,
+            );
+            content.title = `${content.title || '未命名'}（恢复的编辑）`;
+            const id = crypto.randomUUID();
+            const payload = await crypt.seal(u.key, content, `note:${id}`);
+            await api(`/notes/${id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ payload, revision: 0 }),
+            });
+            pendingDraft.current = null;
+          } catch (e) {
+            showError(new Error('未保存的编辑恢复失败，请保持页面打开并重新登录：' + message(e)));
+          }
+        }
+        await load(u);
+      })();
+    },
+    [load, showError],
+  );
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const s = await api<{ initialized: boolean; setupAvailable: boolean }>('/status');
+        if (!active) return;
+        setStatus(s);
+        if (s.initialized) {
+          try {
+            const info = await api<SessionInfo>('/session');
+            const raw = await rememberedDevice(info);
+            if (raw && active) {
+              unlock({ key: await crypt.importKey(raw), info }, raw);
+            }
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 401) await forgetDevice().catch(() => {});
+          }
+        }
+      } catch (e) {
+        if (active) showError(e);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [unlock, showError]);
+  useEffect(() => {
+    if (!unlocked) return;
+    const activity = () => {
+      lastActivity.current = Date.now();
+    };
+    const recheck = () => {
+      if (document.visibilityState === 'visible') void check();
+    };
+    const check = async () => {
+      if (
+        Date.now() >= unlocked.info.device.expires_at ||
+        (!unlocked.info.device.trusted && Date.now() - lastActivity.current >= 5 * 60000)
+      ) {
+        await lock('登录已锁定，请重新输入密码。');
+        return;
+      }
+      try {
+        await api('/session');
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) await lock('该设备已退出或登录已过期。');
+      }
+    };
+    for (const event of ['pointerdown', 'keydown', 'touchstart'])
+      window.addEventListener(event, activity, { passive: true });
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('pageshow', recheck);
+    const timer = setInterval(() => void check(), 30000);
+    return () => {
+      clearInterval(timer);
+      for (const event of ['pointerdown', 'keydown', 'touchstart'])
+        window.removeEventListener(event, activity);
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('pageshow', recheck);
+    };
+  }, [unlocked, lock]);
+  async function navigate(action: () => void) {
+    try {
+      await editor.current?.flush();
+      action();
+    } catch (e) {
+      showError(e);
+    }
+  }
+  async function create(kind: NoteKind, copy?: NoteContent) {
+    if (!unlocked) return;
+    const generation = gate.current;
+    setBusy(true);
+    try {
+      await editor.current?.flush();
+      const content = copy
+        ? { ...copy, title: `${copy.title || '未命名'}（副本）` }
+        : newContent(kind);
+      const id = crypto.randomUUID();
+      const payload = await crypt.seal(unlocked.key, content, `note:${id}`);
+      const n = await api<NoteRecord>(`/notes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ payload, revision: 0, pinned: 0 }),
+      });
+      if (gate.current !== generation) return;
+      setNotes((old) => [{ ...n, content }, ...old]);
+      setSelected(id);
+      setFilter('all');
+      setSearch('');
+      setModal(null);
+      setMobileSidebar(false);
+      setUsage(await api<Usage>('/usage'));
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!status)
+    return (
+      <div className="loading-page">
+        <Brand />
+        <Spinner />
+        <p>{error || '正在连接你的加密空间…'}</p>
+        {error && (
+          <button className="button secondary" onClick={() => location.reload()}>
+            重新连接
+          </button>
+        )}
+      </div>
+    );
+  if (!unlocked)
+    return (
+      <>
+        <Auth
+          key={status.initialized ? 'login' : 'setup'}
+          initialized={status.initialized}
+          setupAvailable={status.setupAvailable}
+          onUnlock={unlock}
+          notice={notice}
+        />
+        {error && (
+          <div className="toast" role="alert">
+            {error}
+            <button aria-label="关闭通知" onClick={() => setError('')}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+      </>
+    );
+  const active = notes.find((n) => n.id === selected);
+  const count = (f: Filter) =>
+    notes.filter((n) =>
+      f === 'trash'
+        ? n.deleted_at
+        : !n.deleted_at && (f === 'all' || (f === 'pinned' ? n.pinned : n.content.kind === f)),
+    ).length;
+  const filtered = notes
+    .filter((n) =>
+      filter === 'trash'
+        ? !!n.deleted_at
+        : !n.deleted_at &&
+          (filter === 'all' || (filter === 'pinned' ? !!n.pinned : n.content.kind === filter)),
+    )
+    .filter(
+      (n) =>
+        !search ||
+        [n.content.title, n.content.body, n.content.username, n.content.url, ...n.content.tags]
+          .join(' ')
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    )
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updated_at - a.updated_at);
+  const filterName =
+    filter === 'all'
+      ? '所有内容'
+      : filter === 'pinned'
+        ? '已置顶'
+        : filter === 'trash'
+          ? '回收站'
+          : kinds[filter].name;
+  return (
+    <div className="workspace">
+      <aside className={`sidebar ${mobileSidebar ? 'mobile-open' : ''}`}>
+        <Brand />
+        <div className="space-label">
+          <span className="avatar">{unlocked.info.vault.username.charAt(0).toUpperCase()}</span>
+          <span>
+            我的私人空间<small>{unlocked.info.vault.username}</small>
+          </span>
+          <ShieldCheck size={15} />
+        </div>
+        <button
+          className="button primary new-button"
+          onClick={() => void navigate(() => setModal('new'))}
+        >
+          <Plus size={18} />
+          新建内容<span>＋</span>
+        </button>
+        <nav>
+          <span className="nav-section">空间</span>
+          {(
+            [
+              ['all', '所有内容', FolderOpen],
+              ['pinned', '已置顶', Pin],
+            ] as const
+          ).map(([f, label, Icon]) => (
+            <button
+              key={f}
+              className={`nav-item ${filter === f ? 'active' : ''}`}
+              onClick={() =>
+                void navigate(() => {
+                  setFilter(f);
+                  setSelected(null);
+                  setMobileSidebar(false);
+                })
+              }
+            >
+              <Icon size={17} />
+              {label}
+              <span>{count(f)}</span>
+            </button>
+          ))}
+          <span className="nav-section">分类</span>
+          {(Object.entries(kinds) as [NoteKind, typeof kinds.note][]).map(
+            ([f, { name, icon: Icon }]) => (
+              <button
+                key={f}
+                className={`nav-item ${filter === f ? 'active' : ''}`}
+                onClick={() =>
+                  void navigate(() => {
+                    setFilter(f);
+                    setSelected(null);
+                    setMobileSidebar(false);
+                  })
+                }
+              >
+                <Icon size={17} />
+                {name}
+                <span>{count(f)}</span>
+              </button>
+            ),
+          )}
+          <span className="nav-section spacer" />
+          <button
+            className={`nav-item ${filter === 'trash' ? 'active' : ''}`}
+            onClick={() =>
+              void navigate(() => {
+                setFilter('trash');
+                setSelected(null);
+                setMobileSidebar(false);
+              })
+            }
+          >
+            <Trash2 size={17} />
+            回收站<span>{count('trash')}</span>
+          </button>
+          <button className="nav-item" onClick={() => void navigate(() => setModal('settings'))}>
+            <Settings size={17} />
+            设置与设备
+          </button>
+        </nav>
+        <div className="sidebar-bottom">
+          <button
+            className="storage-button"
+            onClick={() => {
+              void refreshFiles()
+                .then(() => setModal('usage'))
+                .catch(showError);
+            }}
+          >
+            <HardDrive size={17} />
+            <span>
+              空间已使用<strong>{usage ? bytes(usage.total) : '…'}</strong>
+            </span>
+            <ChevronRight size={15} />
+          </button>
+          <div className="privacy-label">
+            <span className="live-dot" />
+            浏览器内加密已开启
+            <button className="icon-button" aria-label="锁定并退出" onClick={() => void lock()}>
+              <Lock size={15} />
+            </button>
+          </div>
+        </div>
+      </aside>
+      <main className={`workspace-main ${active ? 'has-selection' : ''}`}>
+        <header className="workspace-header">
+          <div>
+            <button
+              className="icon-button mobile-menu"
+              aria-label="打开导航"
+              onClick={() => setMobileSidebar(!mobileSidebar)}
+            >
+              <Menu size={21} />
+            </button>
+            <span className="breadcrumb">我的空间</span>
+            <ChevronRight size={13} />
+            <strong>{filterName}</strong>
+          </div>
+          <div className="header-right">
+            <span className="encrypted-badge">
+              <ShieldCheck size={14} />
+              私密且加密
+            </span>
+            <button
+              className="icon-button"
+              aria-label="退出登录"
+              onClick={() => void lock('已退出登录，并清除此设备的信任。')}
+            >
+              <LogOut size={17} />
+            </button>
+          </div>
+        </header>
+        <div className="content-layout">
+          <section className="note-panel">
+            <div className="list-heading">
+              <div>
+                <h1>{filterName}</h1>
+                <span>{filtered.length} 条内容</span>
+              </div>
+              <button
+                className="icon-button"
+                aria-label="新建内容"
+                onClick={() => void navigate(() => setModal('new'))}
+              >
+                <Plus size={21} />
+              </button>
+            </div>
+            <label className="search-box">
+              <Search size={16} />
+              <input
+                aria-label="搜索内容"
+                placeholder="搜索标题、内容或标签…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <span>⌕</span>
+            </label>
+            {filter === 'trash' && <div className="trash-hint">删除后保留 30 天，可随时恢复。</div>}
+            <div className="note-list">
+              {busy && !notes.length ? (
+                <div className="list-empty">
+                  <Spinner />
+                  正在解密内容…
+                </div>
+              ) : (
+                filtered.map((n) => {
+                  const { icon: Icon, color, name } = kinds[n.content.kind];
+                  return (
+                    <button
+                      className={`note-card ${n.id === selected ? 'selected' : ''}`}
+                      key={n.id}
+                      onClick={() => void navigate(() => setSelected(n.id))}
+                    >
+                      <div className="note-card-top">
+                        <span className={`note-type ${color}`}>
+                          <Icon size={15} />
+                          {name}
+                        </span>
+                        {!!n.pinned && <Pin size={12} />}
+                        <time>{date(n.updated_at).split(' ')[0]}</time>
+                      </div>
+                      <h3>{n.content.title || '未命名内容'}</h3>
+                      <p>
+                        {n.content.kind === 'credential'
+                          ? n.content.username || '账号信息已加密'
+                          : n.content.kind === 'license'
+                            ? '•••• •••• •••• ••••'
+                            : n.content.body.slice(0, 100) || '还没有添加内容'}
+                      </p>
+                      <div className="note-card-bottom">
+                        <div>
+                          {n.content.tags.slice(0, 2).map((t) => (
+                            <span key={t} className="tag">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                        {attachments.filter((a) => a.note_id === n.id).length > 0 && (
+                          <span>
+                            <Paperclip size={11} />
+                            {attachments.filter((a) => a.note_id === n.id).length}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+              {!busy && !filtered.length && (
+                <div className="list-empty">
+                  <FolderOpen size={25} />
+                  <span>
+                    {search
+                      ? '没有找到匹配内容'
+                      : filter === 'trash'
+                        ? '回收站是空的'
+                        : '还没有内容'}
+                  </span>
+                  <small>{search ? '试试其他关键词' : '保存你的第一条备忘录吧'}</small>
+                </div>
+              )}
+            </div>
+            <div className="list-footer">
+              <CheckCheck size={13} />
+              内容已从云端读取
+              <button
+                className="text-button"
+                onClick={() => void navigate(() => void load(unlocked))}
+              >
+                刷新
+              </button>
+            </div>
+          </section>
+          <section className="detail-panel">
+            {active ? (
+              <>
+                <button
+                  className="mobile-back text-button"
+                  onClick={() => void navigate(() => setSelected(null))}
+                >
+                  <ArrowLeft size={16} />
+                  返回列表
+                </button>
+                {active.deleted_at ? (
+                  <div className="trash-detail">
+                    <Trash2 size={36} />
+                    <h2>{active.content.title || '未命名内容'}</h2>
+                    <p>这条内容在回收站中，恢复后可以继续查看和编辑。</p>
+                    <button
+                      className="button primary"
+                      onClick={async () => {
+                        try {
+                          await post(`/notes/${active.id}/restore`);
+                          await load(unlocked);
+                        } catch (e) {
+                          showError(e);
+                        }
+                      }}
+                    >
+                      <RotateCcw size={16} />
+                      恢复内容
+                    </button>
+                    <button className="text-button danger" onClick={() => setModal('trash')}>
+                      永久删除
+                    </button>
+                  </div>
+                ) : (
+                  <Editor
+                    key={active.id}
+                    ref={editor}
+                    note={active}
+                    vaultKey={unlocked.key}
+                    attachments={attachments.filter((a) => a.note_id === active.id)}
+                    onSaved={(n) => {
+                      updateNote(n);
+                      void api<Usage>('/usage').then(setUsage).catch(showError);
+                    }}
+                    onFilesChanged={refreshFiles}
+                    onError={showError}
+                    onState={setSaveState}
+                    onTrash={async () => {
+                      try {
+                        await post(`/notes/${active.id}/trash`);
+                        setSelected(null);
+                        await load(unlocked);
+                      } catch (e) {
+                        showError(e);
+                      }
+                    }}
+                    onCopy={async (content) => {
+                      try {
+                        const id = crypto.randomUUID();
+                        const copy = { ...content, title: `${content.title || '未命名'}（副本）` };
+                        const payload = await crypt.seal(unlocked.key, copy, `note:${id}`);
+                        const n = await api<NoteRecord>(`/notes/${id}`, {
+                          method: 'PUT',
+                          body: JSON.stringify({ payload, revision: 0 }),
+                        });
+                        setNotes((old) => [{ ...n, content: copy }, ...old]);
+                        setSelected(id);
+                        setError('副本已保存；附件仍属于原条目。');
+                      } catch (e) {
+                        showError(e);
+                      }
+                    }}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="welcome-empty">
+                <div className="empty-art">
+                  <div className="empty-paper">
+                    <FileText size={30} />
+                    <i />
+                    <i />
+                    <i />
+                  </div>
+                  <span className="empty-lock">
+                    <LockKeyhole size={20} />
+                  </span>
+                </div>
+                <span className="eyebrow">A LITTLE SPACE, ALL YOURS</span>
+                <h2>给重要的内容，一个安心的归处。</h2>
+                <p>
+                  选择一条内容开始查看，
+                  <br />
+                  或记下此刻的想法，收好下一次要用的密钥。
+                </p>
+                <button className="button primary" onClick={() => setModal('new')}>
+                  <Plus size={17} />
+                  新建第一条内容
+                </button>
+                <div className="empty-foot">
+                  <ShieldCheck size={14} />
+                  加密保存 · 多设备访问 · 只有你可解锁
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+      {error && (
+        <div className="toast" role="alert">
+          {error}
+          <button aria-label="关闭通知" onClick={() => setError('')}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+      {modal === 'new' && (
+        <Modal title="你想保存什么？" onClose={() => setModal(null)}>
+          <p className="muted">为每一种重要内容，找到合适的位置。</p>
+          <div className="new-grid">
+            {(Object.entries(kinds) as [NoteKind, typeof kinds.note][]).map(
+              ([kind, { name, icon: Icon, color }]) => (
+                <button key={kind} disabled={busy} onClick={() => void create(kind)}>
+                  <span className={`type-icon ${color}`}>
+                    <Icon size={24} />
+                  </span>
+                  <strong>{name}</strong>
+                  <small>
+                    {
+                      {
+                        note: '想法、记录与 Markdown',
+                        credential: '网站、用户名与密码',
+                        license: '软件序列号与激活码',
+                        file: '图片、文档与小文件',
+                      }[kind]
+                    }
+                  </small>
+                  <ArrowUpRight size={17} />
+                </button>
+              ),
+            )}
+          </div>
+        </Modal>
+      )}
+      {modal === 'usage' && usage && (
+        <Modal title="空间用量" onClose={() => setModal(null)}>
+          <div className="usage-total">
+            {bytes(usage.total)}
+            <small>已保存的加密内容，无应用容量配额</small>
+          </div>
+          <div className="usage-rows">
+            {[
+              ['文本与条目', usage.text],
+              ['图片与文件', usage.files],
+              ['回收站', usage.trash],
+              ['上传与待清理', usage.pending],
+            ].map(([label, value]) => (
+              <div key={String(label)}>
+                <span>{label}</span>
+                <strong>{bytes(Number(value))}</strong>
+              </div>
+            ))}
+          </div>
+          <p className="muted small">
+            {usage.notes} 条内容 · {usage.attachments}{' '}
+            个附件。统计包含加密封装，不含数据库索引等平台开销；不等同于完整账单用量。
+          </p>
+        </Modal>
+      )}
+      {modal === 'trash' && active && (
+        <Modal title="永久删除这条内容？" onClose={() => setModal(null)}>
+          <p className="muted">
+            “{active.content.title || '未命名内容'}”及其附件将永久删除，无法从回收站恢复。
+          </p>
+          <div className="modal-actions">
+            <button className="button secondary" onClick={() => setModal(null)}>
+              取消
+            </button>
+            <button
+              className="button danger-fill"
+              onClick={async () => {
+                try {
+                  await api(`/notes/${active.id}`, { method: 'DELETE' });
+                  setSelected(null);
+                  setModal(null);
+                  await load(unlocked);
+                } catch (e) {
+                  showError(e);
+                }
+              }}
+            >
+              永久删除
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal === 'settings' && (
+        <SettingsModal
+          unlocked={unlocked}
+          raw={rawKey.current!}
+          notes={notes}
+          attachments={attachments}
+          onClose={() => setModal(null)}
+          onError={showError}
+          onLogout={() => void lock('账号设置已更新，请重新登录。')}
+          onImported={() => load(unlocked)}
+        />
+      )}
+      <span className="sr-only" aria-live="polite">
+        {saveState}
+      </span>
+    </div>
+  );
+}
+
+type Backup = {
+  format: 'ciphermemo-backup';
+  version: 1;
+  exportedAt: string;
+  vault: VaultHeader;
+  notes: NoteRecord[];
+  attachments: (Attachment & { parts: string[] })[];
+};
+function SettingsModal({
+  unlocked,
+  raw,
+  notes,
+  attachments,
+  onClose,
+  onError,
+  onLogout,
+  onImported,
+}: {
+  unlocked: Unlocked;
+  raw: Uint8Array<ArrayBuffer>;
+  notes: OpenNote[];
+  attachments: Attachment[];
+  onClose: () => void;
+  onError: (e: unknown) => void;
+  onLogout: () => void;
+  onImported: () => Promise<void>;
+}) {
+  const [tab, setTab] = useState<'devices' | 'security' | 'backup'>('devices');
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [busy, setBusy] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [backupPassword, setBackupPassword] = useState('');
+  const [info, setInfo] = useState('');
+  const [revoke, setRevoke] = useState<Device | 'all' | null>(null);
+  const reload = useCallback(() => api<Device[]>('/devices').then(setDevices), []);
+  useEffect(() => {
+    reload().catch(onError);
+  }, [reload, onError]);
+  async function changePassword(e: FormEvent) {
+    e.preventDefault();
+    setBusy('正在更新密码…');
+    try {
+      crypt.validatePassword(newPassword);
+      if (newPassword !== confirm) throw new Error('两次新密码不一致');
+      const old = await crypt.derive(oldPassword, unlocked.info.vault.kdf);
+      const kdf = crypt.newKdf();
+      const next = await crypt.derive(newPassword, kdf);
+      const wrappedKey = await crypt.sealBytes(next.wrapping, raw, 'vault-key');
+      await post('/auth/password', { oldAuth: old.auth, auth: next.auth, kdf, wrappedKey });
+      setOldPassword('');
+      setNewPassword('');
+      setConfirm('');
+      onLogout();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy('');
+    }
+  }
+  async function exportBackup() {
+    setBusy('正在整理加密备份…');
+    try {
+      const files: Backup['attachments'] = [];
+      for (const a of attachments) {
+        setBusy(`正在备份附件 ${files.length + 1}/${attachments.length}…`);
+        const parts: string[] = [];
+        for (let p = 0; p < a.chunks; p++)
+          parts.push(crypt.base64(await fileBackup.encryptedChunk(a.id, p)));
+        files.push({ ...a, parts });
+      }
+      const backup: Backup = {
+        format: 'ciphermemo-backup',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        vault: unlocked.info.vault,
+        notes: notes.map(({ content: _, ...n }) => n),
+        attachments: files,
+      };
+      saveBlob(
+        new Blob([JSON.stringify(backup)], { type: 'application/json' }),
+        `ciphermemo-${new Date().toISOString().slice(0, 10)}.cmbackup`,
+      );
+      setInfo('备份已导出，包含回收站和附件。恢复时需要导出当时的密码。');
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy('');
+    }
+  }
+  async function importBackup(e: FormEvent) {
+    e.preventDefault();
+    if (!importFile) return;
+    setBusy('正在验证备份…');
+    let imported = 0;
+    try {
+      const backup = JSON.parse(await importFile.text()) as Backup;
+      if (
+        backup.format !== 'ciphermemo-backup' ||
+        backup.version !== 1 ||
+        !Array.isArray(backup.notes) ||
+        !Array.isArray(backup.attachments)
+      )
+        throw new Error('不支持的备份格式');
+      const material = await crypt.derive(backupPassword, backup.vault.kdf);
+      const oldRaw = await crypt.openBytes(material.wrapping, backup.vault.wrappedKey, 'vault-key');
+      const oldKey = await crypt.importKey(oldRaw);
+      oldRaw.fill(0);
+      // Authenticate the full backup before writing any records. File bytes are also checked per chunk.
+      const contents = new Map<string, NoteContent>();
+      for (const n of backup.notes) {
+        const content = await crypt.open<NoteContent>(oldKey, n.payload, `note:${n.id}`);
+        if (
+          !kinds[content.kind] ||
+          typeof content.title !== 'string' ||
+          typeof content.body !== 'string' ||
+          !Array.isArray(content.tags)
+        )
+          throw new Error('备份条目格式不正确');
+        contents.set(n.id, content);
+      }
+      for (const a of backup.attachments) {
+        if (!contents.has(a.note_id) || a.parts.length !== a.chunks)
+          throw new Error('备份附件索引不完整');
+        const meta = await crypt.open<AttachmentMeta>(oldKey, a.metadata, `attachment:${a.id}`);
+        let size = 0;
+        for (let p = 0; p < a.parts.length; p++) {
+          const part = await crypt.openChunk(oldKey, crypt.unbase64(a.parts[p]), a.id, p);
+          size += part.length;
+        }
+        if (size !== meta.size || Math.max(1, Math.ceil(meta.size / crypt.CHUNK_SIZE)) !== a.chunks)
+          throw new Error('备份文件校验失败');
+      }
+      for (const n of backup.notes) {
+        setBusy(`正在导入 ${imported + 1}/${backup.notes.length}…`);
+        const id = crypto.randomUUID();
+        const content = contents.get(n.id)!;
+        const payload = await crypt.seal(unlocked.key, content, `note:${id}`);
+        await api(`/notes/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ payload, revision: 0, pinned: n.pinned }),
+        });
+        imported++;
+        for (const a of backup.attachments.filter((a) => a.note_id === n.id)) {
+          const meta = await crypt.open<AttachmentMeta>(oldKey, a.metadata, `attachment:${a.id}`);
+          const parts: Uint8Array<ArrayBuffer>[] = [];
+          for (let p = 0; p < a.parts.length; p++)
+            parts.push(await crypt.openChunk(oldKey, crypt.unbase64(a.parts[p]), a.id, p));
+          await uploadFile(
+            unlocked.key,
+            id,
+            new window.File(parts, meta.name, { type: meta.type }),
+            () => {},
+          );
+        }
+        if (n.deleted_at) await post(`/notes/${id}/trash`);
+      }
+      setBackupPassword('');
+      setImportFile(null);
+      await onImported();
+      setInfo(`已导入 ${imported} 条内容，原有内容保持保留。`);
+    } catch (e) {
+      if (imported) await onImported().catch(() => {});
+      onError(
+        new Error(
+          imported
+            ? `已导入 ${imported} 条，后续导入中断：${message(e)}。重复导入会创建副本。`
+            : message(e),
+        ),
+      );
+    } finally {
+      setBusy('');
+    }
+  }
+  return (
+    <Modal
+      title="空间设置"
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
+      <div className="settings-tabs">
+        {(
+          [
+            ['devices', '登录设备'],
+            ['security', '账号安全'],
+            ['backup', '备份与恢复'],
+          ] as const
+        ).map(([t, label]) => (
+          <button
+            disabled={!!busy}
+            key={t}
+            className={tab === t ? 'active' : ''}
+            onClick={() => {
+              setTab(t);
+              setInfo('');
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'devices' && (
+        <>
+          <p className="muted small">
+            可信设备在固定 14 天内免输密码，到期后需要重新登录。撤销后将阻止该设备后续在线访问。
+          </p>
+          <div className="device-list">
+            {devices.map((d) => (
+              <div key={d.id} className="device-row">
+                <span className="device-icon">
+                  <Monitor size={22} />
+                </span>
+                <div>
+                  <strong>
+                    {d.label}
+                    {d.current && <span className="tag">当前设备</span>}
+                  </strong>
+                  <small>
+                    {d.trusted ? '可信设备' : '临时会话'} · 最近访问 {date(d.last_seen)}
+                  </small>
+                  <small>到期 {date(d.expires_at)}</small>
+                </div>
+                <button
+                  className="text-button danger"
+                  onClick={() => setRevoke(d)}
+                  disabled={!!busy}
+                >
+                  退出
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            className="button secondary full"
+            disabled={!!busy}
+            onClick={() => setRevoke('all')}
+          >
+            <LogOut size={16} />
+            退出所有设备
+          </button>
+          {revoke && (
+            <div className="inline-confirm">
+              {revoke === 'all' ? '包括当前设备，全部退出？' : `撤销 ${revoke.label} 的访问？`}
+              <button
+                className="text-button danger"
+                onClick={async () => {
+                  setBusy('正在撤销…');
+                  try {
+                    if (revoke === 'all') {
+                      await post('/devices/revoke-all');
+                      onLogout();
+                    } else {
+                      await api(`/devices/${revoke.id}`, { method: 'DELETE' });
+                      if (revoke.current) onLogout();
+                      else await reload();
+                    }
+                    setRevoke(null);
+                  } catch (e) {
+                    onError(e);
+                  } finally {
+                    setBusy('');
+                  }
+                }}
+              >
+                确认退出
+              </button>
+              <button className="text-button" onClick={() => setRevoke(null)}>
+                取消
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {tab === 'security' && (
+        <>
+          <div className="account-info">
+            <ShieldCheck size={20} />
+            <div>
+              <strong>{unlocked.info.vault.username}</strong>
+              <small>个人空间 · 不开放注册</small>
+            </div>
+          </div>
+          <form onSubmit={changePassword}>
+            <label className="field">
+              <span>当前密码</span>
+              <input
+                required
+                type="password"
+                autoComplete="current-password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>新密码</span>
+              <input
+                required
+                minLength={14}
+                type="password"
+                autoComplete="new-password"
+                placeholder="至少 14 个字符"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>确认新密码</span>
+              <input
+                required
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
+            </label>
+            <p className="muted small">
+              修改密码将退出所有设备。原恢复密钥仍然有效；旧备份仍需导出时的密码。若怀疑密码已泄露，还需轮换数据密钥，当前版本尚未提供此操作。
+            </p>
+            <button className="button primary" disabled={!!busy}>
+              更新密码并退出
+            </button>
+          </form>
+        </>
+      )}
+      {tab === 'backup' && (
+        <>
+          <div className="backup-section">
+            <h3>
+              <Download size={18} />
+              导出加密备份
+            </h3>
+            <p className="muted small">
+              包含所有条目、文件和回收站。文件本身保持加密，恢复时需要导出当时的密码。此版本在浏览器内整理完整备份，较大空间会受到设备内存限制。
+            </p>
+            <button
+              className="button secondary full"
+              disabled={!!busy}
+              onClick={() => void exportBackup()}
+            >
+              下载空间备份
+            </button>
+          </div>
+          <div className="backup-section">
+            <h3>
+              <Upload size={18} />
+              从备份导入
+            </h3>
+            <p className="muted small">
+              导入为新副本，不覆盖现有内容；附件重新加密。网络中断时可能部分完成，请查看提示再决定是否重试。
+            </p>
+            <form onSubmit={importBackup}>
+              <label className="field">
+                <span>加密备份文件</span>
+                <input
+                  type="file"
+                  accept=".cmbackup,.json"
+                  required
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              <label className="field">
+                <span>备份导出时的密码</span>
+                <input
+                  required
+                  type="password"
+                  autoComplete="off"
+                  value={backupPassword}
+                  onChange={(e) => setBackupPassword(e.target.value)}
+                />
+              </label>
+              <button className="button primary full" disabled={!!busy || !importFile}>
+                验证并导入备份
+              </button>
+            </form>
+          </div>
+        </>
+      )}
+      {busy && (
+        <div className="notice">
+          <Spinner />
+          {busy}
+        </div>
+      )}
+      {info && <div className="notice">{info}</div>}
+      <div className="settings-footer">CipherMemo 0.1 · Cloudflare Workers / D1 / R2</div>
+    </Modal>
+  );
+}
