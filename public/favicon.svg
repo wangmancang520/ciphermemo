@@ -1,1 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="#283f37"/><path d="M22 29v-6a10 10 0 0 1 20 0v6M20 29h24v22H20z" fill="none" stroke="#e9f3dc" stroke-width="4" stroke-linejoin="round"/><circle cx="32" cy="39" r="3" fill="#e9f3dc"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-labelledby="title desc">
+  <title id="title">CipherMemo</title>
+  <desc id="desc">A folded memo with a keyhole, on a sea-glass green tile.</desc>
+  <defs>
+    <linearGradient id="cm-tile" x1="8" y1="4" x2="88" y2="96" gradientUnits="userSpaceOnUse"><stop stop-color="#53a99a"/><stop offset="1" stop-color="#287e79"/></linearGradient>
+    <linearGradient id="cm-paper" x1="25" y1="21" x2="71" y2="79" gradientUnits="userSpaceOnUse"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#e2f3ec"/></linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="25" fill="url(#cm-tile)"/>
+  <path d="M31 20h25l17 17v31c0 5-4 9-9 9H31c-5 0-9-4-9-9V29c0-5 4-9 9-9Z" fill="url(#cm-paper)"/>
+  <path d="M56 20v11c0 3.3 2.7 6 6 6h11L56 20Z" fill="#a9dbca"/>
+  <path d="M48 40a9 9 0 0 0-4.5 16.8L42 65h12l-1.5-8.2A9 9 0 0 0 48 40Z" fill="#318980"/>
+  <path d="M33 69h9" stroke="#a5cfc1" stroke-width="3" stroke-linecap="round"/>
+  <path d="M61 69h2" stroke="#a5cfc1" stroke-width="3" stroke-linecap="round"/>
+</svg>

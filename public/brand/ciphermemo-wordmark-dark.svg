@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" width="420" height="96" role="img" aria-labelledby="title"><title id="title">CipherMemo</title><g><defs>
+    <linearGradient id="word-tile" x1="8" y1="4" x2="88" y2="96" gradientUnits="userSpaceOnUse"><stop stop-color="#53a99a"/><stop offset="1" stop-color="#287e79"/></linearGradient>
+    <linearGradient id="word-paper" x1="25" y1="21" x2="71" y2="79" gradientUnits="userSpaceOnUse"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#e2f3ec"/></linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="25" fill="url(#word-tile)"/>
+  <path d="M31 20h25l17 17v31c0 5-4 9-9 9H31c-5 0-9-4-9-9V29c0-5 4-9 9-9Z" fill="url(#word-paper)"/>
+  <path d="M56 20v11c0 3.3 2.7 6 6 6h11L56 20Z" fill="#a9dbca"/>
+  <path d="M48 40a9 9 0 0 0-4.5 16.8L42 65h12l-1.5-8.2A9 9 0 0 0 48 40Z" fill="#318980"/>
+  <path d="M33 69h9" stroke="#a5cfc1" stroke-width="3" stroke-linecap="round"/>
+  <path d="M61 69h2" stroke="#a5cfc1" stroke-width="3" stroke-linecap="round"/></g><text x="118" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="43" font-weight="700" letter-spacing="-1.8" fill="#e2ecef">CipherMemo</text></svg>

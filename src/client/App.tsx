@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { t, locale, clockTime, usePreferences } from './preferences';
 import Preferences from './PreferenceControls';
+import Brand, { LogoMark } from './Brand';
 import Modal from './Modal';
 import ProfileEditor, { useAvatar, openProfile, emptyProfile } from './ProfileEditor';
 import { PROFILE_OWNER_ID, type ProfileContent, type ProfileRecord } from '../shared/types';
@@ -111,18 +112,6 @@ function message(e: unknown) {
 }
 function Spinner() {
   return <LoaderCircle size={17} className="spin" />;
-}
-function Brand() {
-  return (
-    <div className="brand">
-      <span className="brand-icon">
-        <LockKeyhole size={20} />
-      </span>
-      <span>
-        CipherMemo<small>{t('你的私人空间')}</small>
-      </span>
-    </div>
-  );
 }
 function SecretField({
   label,
@@ -358,7 +347,7 @@ function Auth({
           </div>
           <div className="intro-decoration" aria-hidden="true">
             <div className="deco-line" />
-            <LockKeyhole size={28} />
+            <LogoMark size={28} />
             <span>YOUR THOUGHTS. YOUR KEYS.</span>
           </div>
         </section>
@@ -410,8 +399,8 @@ function Auth({
             </>
           ) : (
             <>
-              <div className="card-symbol">
-                <LockKeyhole />
+              <div className="card-symbol brand-symbol">
+                <LogoMark size={44} />
               </div>
               <h2>
                 {mode === 'setup'
@@ -1489,7 +1478,7 @@ export default function App() {
       {entering && (
         <div className="unlock-transition" role="status" aria-label={t('欢迎回来')}>
           <div className="unlock-logo">
-            <LockKeyhole size={44} />
+            <LogoMark size={90} />
           </div>
           <span>CipherMemo</span>
         </div>
@@ -2495,7 +2484,10 @@ function SettingsModal({
         </div>
       )}
       {info && <div className="notice">{t(info)}</div>}
-      <div className="settings-footer">CipherMemo 0.1 · Cloudflare Workers / D1 / R2</div>
+      <div className="settings-footer">
+        <LogoMark size={20} />
+        <span>CipherMemo 0.1 · Cloudflare Workers / D1 / R2</span>
+      </div>
     </Modal>
   );
 }

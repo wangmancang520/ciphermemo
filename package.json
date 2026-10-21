@@ -15,7 +15,7 @@
     "deploy": "wrangler deploy",
     "cf:deploy": "wrangler deploy",
     "setup:local": "node scripts/setup-local.mjs",
-    "format": "prettier --write src tests scripts package.json tsconfig.json vite.config.ts vitest.config.ts wrangler.jsonc .github README.md .prettierrc.json index.html",
+    "format": "prettier --write src tests scripts docs package.json tsconfig.json vite.config.ts vitest.config.ts wrangler.jsonc .github README.md CONTRIBUTING.md SECURITY.md .prettierrc.json index.html",
     "deploy:local": "npm run build && wrangler deploy"
   },
   "dependencies": {

@@ -93,7 +93,7 @@ p {
 }
 .brand-icon {
   background: var(--accent);
-  width: 37px;
+  width: 40px;
   height: 40px;
   border-radius: 12px;
   display: grid;
@@ -1955,8 +1955,7 @@ body,
 .workspace {
   background: var(--canvas);
 }
-.primary,
-.brand-icon {
+.primary {
   background: var(--accent);
   color: var(--on-accent);
 }
@@ -2737,5 +2736,47 @@ button.space-label:focus-visible {
     height: 72px;
     flex-basis: 72px;
     border-radius: 20px;
+  }
+}
+
+/* A single brand mark across every branded surface. */
+.logo-mark {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.brand-icon {
+  flex-shrink: 0;
+  background: transparent;
+  color: inherit;
+}
+.brand-icon > .logo-mark {
+  width: 100%;
+  height: 100%;
+}
+.card-symbol.brand-symbol {
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  border: 0;
+}
+.unlock-logo {
+  border-radius: 26%;
+  background: transparent;
+}
+.unlock-logo > .logo-mark {
+  width: 100%;
+  height: 100%;
+}
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+@media (max-width: 650px) {
+  .auth-page .brand-icon {
+    width: 36px;
+    height: 36px;
   }
 }
