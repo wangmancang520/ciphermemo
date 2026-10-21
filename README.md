@@ -1,10 +1,22 @@
 # CipherMemo
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fwangmancang520%2Fciphermemo)
-
 一个只属于自己的在线加密备忘录 / 轻量保险箱。使用账号密码访问，支持 Markdown、账号密码、激活密钥、图片和文件。前后端、数据库、对象存储全部运行在 Cloudflare，无需 VPS。
 
 **当前版本：0.1.0。单账号，不开放注册，无应用层单文件或空间容量配额，显示实际内容用量。**
+
+## 使用方式：先 Fork，再部署
+
+1. **先 [Fork 本项目到自己的 GitHub 账号](https://github.com/wangmancang520/ciphermemo/fork)**，后续从自己的 `你的账号/ciphermemo` 仓库部署。你已经是本仓库所有者，或已经 Fork 过的，可以直接使用现有仓库，无需再建副本。
+2. 登录 Cloudflare，并先开通 **R2**。点击下方按钮后，在创建 Workers 应用的页面选择 **GitHub / Import an existing Git repository（导入已有 Git 仓库）**，授权并选中自己账号下的 `ciphermemo`，而不是“复制公开模板 / 新建仓库”。
+3. 确认分支 `main`、应用名称 `ciphermemo`、根目录为仓库根目录；构建命令填 `npm run build`，部署命令填 `npm run deploy`。预览命令保留 `npx wrangler preview`；仅个人使用 `main` 时可关闭非生产分支预览构建。
+4. **先完成部署，再设置初始化口令**：进入该 Worker 的 **Settings → Variables and Secrets → Add**，类型选 **Secret**、名称填 **`SETUP_TOKEN`**、值填自行保存的至少 **32 字符随机口令**，然后点击 **Deploy / 保存并部署**。Git 导入页没有初始化口令输入框是正常的；不要把它只填在构建变量里。
+5. 打开网站并刷新，输入刚设置的初始化口令，创建自己的账号密码，下载并安全保存恢复密钥。
+
+**读完上述步骤后再点击按钮。按钮打开 Cloudflare 的创建应用入口；请手动选择自己的 Fork（已有仓库）。它不再链接到会复制仓库的官方模板流程，也不会自动识别当前 README 属于谁的 Fork。** 如果已经部署完成，只需执行第 4、5 步，无需重新创建项目。
+
+[![从自己的 Fork 部署到 Cloudflare](https://deploy.workers.cloudflare.com/button)](https://dash.cloudflare.com/?to=%2F%3Aaccount%2Fworkers-and-pages%2Fcreate)
+
+[先 Fork 本项目](https://github.com/wangmancang520/ciphermemo/fork) · [查看初始化口令设置](#初始化口令设置部署后必做)
 
 ## 功能
 
@@ -24,22 +36,33 @@
 
 项目使用 Workers Static Assets + Workers API + D1 + 私有 R2。数据库表在首次 API 请求时幂等初始化；无需手动运行建表 SQL。资源声明位于 `wrangler.jsonc`。
 
-### 一键部署（推荐）
+### 从自己的仓库部署
 
-点击 README 顶部的 **Deploy to Cloudflare** 按钮即可开始，无需安装 Node.js、手动创建数据库或准备 VPS。
+请先阅读本文顶部按钮前的使用说明。本项目通过 Cloudflare 的 **GitHub → 选择现有仓库** 流程部署：连接你自己的 Fork，不再由模板按钮复制或新建第二个 GitHub 仓库。Cloudflare 根据 `wrangler.jsonc` 自动创建并绑定 D1、私有 R2 和静态资源；首次 API 请求会初始化数据库表。
 
-1. 登录 Cloudflare，并按页面提示关联 GitHub / GitLab。Cloudflare 会把这个公开模板复制到你的 Git 账号，并配置自动构建和部署。
-2. 确认应用名称。保留自动识别的构建命令 `npm run build` 和部署命令 `npm run deploy`（即 `wrangler deploy`）；项目根目录保持默认。
-3. 在部署表单的 Secret **`SETUP_TOKEN`** 中填写至少 32 个字符的独立随机初始化口令，并自行妥善保存。页面会从 `.dev.vars.example` 识别这个 Secret 配置，说明来自 `package.json` 的 Cloudflare 绑定描述。**不要把真实口令写进源码或示例文件。**
-4. 点击部署。Cloudflare 根据 `wrangler.jsonc` 自动创建并绑定 **一个 D1 数据库和一个私有 R2 存储桶**，同时上传网页和 Worker API。资源采用应用名称前缀，配置中不预填账号 ID、数据库 ID 或公共存储桶地址。
-5. 部署成功后打开生成的 Worker 地址，输入上一步的初始化口令，设置你的用户名和至少 14 字符的登录密码。数据库表自动初始化，无需执行 SQL。
-6. 下载并离线保存恢复密钥，然后进入私人空间。之后仅使用账号密码登录，没有公开注册接口；初始化口令不用于日常登录。
+**不要在 GitHub 源码、`wrangler.jsonc` 的明文变量或构建日志中保存真实初始化口令。** `SETUP_TOKEN` 只通过下文的 Worker 运行时 Secret 配置，部署页没有口令输入框也可以先完成部署。
 
-首次部署仍需完成 Cloudflare / Git 账号授权，且 Cloudflare 账号必须先开通 R2（可能需要支付资料）。如果部署表单未显示 `SETUP_TOKEN`，请在 Worker → Settings → Variables and Secrets 中以 **Secret** 类型添加，再刷新网站初始化；没有有效口令时网站不会允许创建账号。
+### 初始化口令设置（部署后必做）
 
-初始化成功后可以删除运行时 `SETUP_TOKEN`。不要将 R2 桶设为公开，也不要把应用的备忘录、备份或 `.dev.vars` 提交到 Git 仓库。**仓库公开的是程序源码，不会公开部署在你账号里的空间内容。**
+在 Cloudflare 控制台打开：**Workers & Pages → 你的 Worker → Settings（设置）→ Variables and Secrets（变量和机密）→ Add（添加）**。
 
-如果你的 Cloudflare 已有同名应用，部署时选择一个新名称；如需复用已有存储，请显式绑定对应资源，避免误建一个空空间。
+| 字段                 | 填写内容                                         |
+| -------------------- | ------------------------------------------------ |
+| 类型 / Type          | **Secret**                                       |
+| 名称 / Variable name | `SETUP_TOKEN`                                    |
+| 值 / Value           | 你自行生成并保存的、至少 **32 个字符**的随机口令 |
+
+选择 **Deploy / 保存并部署**使配置生效，再刷新网站。注意：这里是 Worker 的**运行时** Variables and Secrets，不是 Settings → Builds 中的构建变量。构建变量仅供构建使用，不会自动成为运行时 Secret。[Cloudflare 配置说明](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)、[运行时 Secret 操作说明](https://developers.cloudflare.com/workers/configuration/secrets/#via-the-dashboard)
+
+首次打开网站时输入同一份初始化口令，然后设置用户名和至少 14 字符的登录密码，并下载、离线保存恢复密钥。初始化口令只用于创建唯一账号，不用于日常登录。初始化成功后可以删除运行时 `SETUP_TOKEN`；正常登录与解密不依赖它。
+
+**已经部署、但网站提示未配置初始化口令？直接按上面的路径添加 Secret 并保存部署即可，无需重新 Fork、重新创建 Worker 或删除数据。**
+
+### 部署与存储注意事项
+
+首次部署需要 Cloudflare / GitHub 授权，Cloudflare 账号需先开通 R2（可能需要支付资料）。不要开启 R2 的公共访问，也不要把备忘录、备份或 `.dev.vars` 提交到 Git 仓库。仓库公开的是程序源码，不会公开你部署的空间内容。
+
+应用名称默认使用 `ciphermemo`，应与 `wrangler.jsonc` 中的 `name` 一致。如果修改名称，请同步修改该配置。已有部署请保持原 D1、R2 资源绑定，避免把现有数据空间切换成新建的空数据库。
 
 ### 命令行备选方式
 

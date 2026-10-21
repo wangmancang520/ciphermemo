@@ -1,2 +1,6 @@
-# Set your own random value with at least 32 characters. Never commit .dev.vars.
+# Local development only: copy to .dev.vars, then set your own random value (32+ characters).
+# Cloudflare Git import does NOT automatically turn this file into runtime secrets.
+# After deploying: Worker > Settings > Variables and Secrets > Add > Secret > SETUP_TOKEN.
+# Save and Deploy, then refresh the website to initialize your account.
+# Never commit .dev.vars or a real token.
 SETUP_TOKEN=

@@ -468,7 +468,9 @@ function Auth({
               {success && <div className="notice">{success}</div>}
               {mode === 'setup' && !setupAvailable && (
                 <div className="error">
-                  请先在 Cloudflare 设置至少 32 字符的 SETUP_TOKEN，再初始化空间。
+                  请在 Cloudflare 中打开此 Worker → Settings → Variables and Secrets，添加名为
+                  SETUP_TOKEN 的 Secret（至少 32
+                  字符），保存并部署后刷新本页。构建变量不能代替运行时 Secret。
                 </div>
               )}
               <form onSubmit={submit}>

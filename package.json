@@ -50,7 +50,7 @@
         "description": "自动创建私有 R2 存储桶，用于保存加密图片和文件；请先在 Cloudflare 账号中启用 R2。"
       },
       "SETUP_TOKEN": {
-        "description": "请填写至少 32 个字符的独立随机初始化口令。部署后首次打开网站时需要输入它；它不是你的登录密码。请勿使用示例值或将真实口令提交到 GitHub。"
+        "description": "首次部署完成后，在该 Worker 的 Settings → Variables and Secrets 添加运行时 Secret：SETUP_TOKEN，值为至少 32 字符的独立随机初始化口令。保存并部署后刷新网站。不要仅设置构建变量；此口令不是日常登录密码。"
       }
     }
   }
