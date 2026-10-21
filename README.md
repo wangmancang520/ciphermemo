@@ -78,6 +78,14 @@ npx wrangler secret put SETUP_TOKEN
 
 运行时密钥通过 Wrangler 的交互输入设置，不要写进仓库、命令参数或 GitHub issue。自动资源创建会更新本机 Wrangler 配置，注意保存生成的资源 ID。
 
+## 访问地址与 HTTPS
+
+线上访问必须使用 `https://`。应用会将非本机的 HTTP 请求跳转到 HTTPS；自定义域名需先配置有效的 HTTPS 证书。浏览器仅在安全上下文中提供解锁所需的 Web Crypto 接口。
+
+如果出现 `Cannot read properties of undefined (reading 'importKey')`，请检查地址是否以 `https://` 开头。若已使用 HTTPS，请用最新版 Chrome、Edge、Firefox 或 Safari 独立打开页面，避免从不安全网页内嵌访问。无需重新初始化账号或清空数据。
+
+本地开发可使用 `http://localhost` 或 `http://127.0.0.1`；局域网 IP 的 HTTP 地址不具备相同例外，需要配置 HTTPS。
+
 ## 本地开发
 
 ```sh

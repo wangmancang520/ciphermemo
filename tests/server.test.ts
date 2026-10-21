@@ -140,6 +140,38 @@ beforeEach(async () => {
 });
 
 describe('鉴权与会话', () => {
+  it('线上 HTTP 在提供页面或处理 API 前跳转到同域 HTTPS，保留路径和查询参数', async () => {
+    for (const [path, method] of [
+      ['/?view=notes', 'GET'],
+      ['/api/auth/login?next=notes', 'POST'],
+    ]) {
+      const response = await worker.fetch(
+        new Request('http://memo.example' + path, { method }),
+        env,
+        {} as ExecutionContext,
+      );
+      expect(response.status).toBe(308);
+      expect(response.headers.get('Location')).toBe('https://memo.example' + path);
+      expect(response.headers.get('set-cookie')).toBeNull();
+    }
+  });
+  it('本机 HTTP 开发地址保持可用，局域网 IP 需要 HTTPS', async () => {
+    for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+      const response = await worker.fetch(
+        new Request(`http://${host}:8787/api/status`),
+        env,
+        {} as ExecutionContext,
+      );
+      expect(response.status).toBe(200);
+    }
+    const response = await worker.fetch(
+      new Request('http://192.168.1.2:8787/'),
+      env,
+      {} as ExecutionContext,
+    );
+    expect(response.status).toBe(308);
+    expect(response.headers.get('Location')).toBe('https://192.168.1.2:8787/');
+  });
   it('只允许一次初始化，没有注册接口', async () => {
     expect((await request('/setup', 'POST', {})).status).toBe(409);
     expect((await request('/register', 'POST', {})).status).toBe(404);

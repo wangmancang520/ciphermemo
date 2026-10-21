@@ -269,11 +269,21 @@ function Auth({
     recovery: string;
   } | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const cryptoStatus = crypt.cryptoAvailability();
+  const cryptoError =
+    cryptoStatus === 'insecure'
+      ? '请通过 HTTPS 安全连接打开网站后再登录。'
+      : cryptoStatus === 'unsupported'
+        ? '当前浏览器未提供所需的加密功能，请使用最新版 Chrome、Edge、Firefox 或 Safari 打开。'
+        : '';
+  const secureUrl = new URL(location.href);
+  secureUrl.protocol = 'https:';
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
     setBusy(true);
     try {
+      crypt.requireCrypto();
       if (mode === 'login') {
         const { kdf } = await api<{ kdf: Kdf }>('/auth/params');
         const material = await crypt.derive(password, kdf);
@@ -487,6 +497,16 @@ function Auth({
                   )}
                 </div>
               )}
+              {cryptoError && (
+                <div className="error" role="alert">
+                  <p>{t(cryptoError)}</p>
+                  {cryptoStatus === 'insecure' && (
+                    <a className="text-button" href={secureUrl.href}>
+                      {t('使用 HTTPS 安全连接')}
+                    </a>
+                  )}
+                </div>
+              )}
               <form onSubmit={submit}>
                 {mode === 'setup' && (
                   <label className="field">
@@ -568,7 +588,7 @@ function Auth({
                 )}
                 <button
                   className="button primary full"
-                  disabled={busy || (mode === 'setup' && !setupAvailable)}
+                  disabled={busy || !!cryptoError || (mode === 'setup' && !setupAvailable)}
                 >
                   {busy ? (
                     <>

@@ -3,6 +3,25 @@ import type { Envelope, Kdf } from '../shared/types';
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 export const CHUNK_SIZE = 4 * 1024 * 1024;
+export function cryptoAvailability(): 'ready' | 'insecure' | 'unsupported' {
+  if (globalThis.isSecureContext === false) return 'insecure';
+  const api = globalThis.crypto?.subtle;
+  return api &&
+    ['importKey', 'deriveBits', 'encrypt', 'decrypt'].every(
+      (method) => typeof api[method as keyof SubtleCrypto] === 'function',
+    )
+    ? 'ready'
+    : 'unsupported';
+}
+export function requireCrypto(): SubtleCrypto {
+  const status = cryptoAvailability();
+  if (status === 'insecure') throw new Error('请通过 HTTPS 安全连接打开网站后再登录。');
+  if (status === 'unsupported')
+    throw new Error(
+      '当前浏览器未提供所需的加密功能，请使用最新版 Chrome、Edge、Firefox 或 Safari 打开。',
+    );
+  return globalThis.crypto.subtle;
+}
 export function base64(bytes: Uint8Array): string {
   let s = '';
   for (let i = 0; i < bytes.length; i += 32768)
@@ -29,6 +48,7 @@ export function validatePassword(password: string) {
   if (password.length < 14) throw new Error('请使用至少 14 个字符的长密码或口令');
 }
 export async function derive(password: string, kdf: Kdf) {
+  requireCrypto();
   if (
     kdf.name !== 'argon2id' ||
     kdf.memory !== 65536 ||
@@ -53,9 +73,9 @@ export async function derive(password: string, kdf: Kdf) {
   return { auth: base64(auth), wrapping: await importKey(wrapping) };
 }
 async function hkdf(root: Uint8Array<ArrayBuffer>, purpose: string) {
-  const key = await crypto.subtle.importKey('raw', root, 'HKDF', false, ['deriveBits']);
+  const key = await requireCrypto().importKey('raw', root, 'HKDF', false, ['deriveBits']);
   return new Uint8Array(
-    await crypto.subtle.deriveBits(
+    await requireCrypto().deriveBits(
       {
         name: 'HKDF',
         hash: 'SHA-256',
@@ -79,7 +99,7 @@ export async function recoveryMaterials(secret: string) {
   return { auth: base64(auth), wrapping: await importKey(wrap) };
 }
 export async function importKey(bytes: Uint8Array<ArrayBuffer>, extractable = false) {
-  return crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, extractable, [
+  return requireCrypto().importKey('raw', bytes, { name: 'AES-GCM' }, extractable, [
     'encrypt',
     'decrypt',
   ]);
@@ -90,7 +110,7 @@ export async function sealBytes(
   context: string,
 ): Promise<Envelope> {
   const iv = random(12);
-  const data = await crypto.subtle.encrypt(
+  const data = await requireCrypto().encrypt(
     { name: 'AES-GCM', iv, additionalData: enc.encode(`ciphermemo:v1:${context}`) },
     key,
     bytes,
@@ -104,7 +124,7 @@ export async function openBytes(
 ): Promise<Uint8Array<ArrayBuffer>> {
   if (value.v !== 1 || unbase64(value.iv).length !== 12) throw new Error('不支持的加密格式');
   return new Uint8Array(
-    await crypto.subtle.decrypt(
+    await requireCrypto().decrypt(
       {
         name: 'AES-GCM',
         iv: unbase64(value.iv),
@@ -128,7 +148,7 @@ export async function sealChunk(
   part: number,
 ) {
   const iv = random(12);
-  const data = await crypto.subtle.encrypt(
+  const data = await requireCrypto().encrypt(
     { name: 'AES-GCM', iv, additionalData: enc.encode(`ciphermemo:v1:file:${aid}:${part}`) },
     key,
     bytes,
@@ -146,7 +166,7 @@ export async function openChunk(
 ) {
   if (bytes.length < 28) throw new Error('文件分块损坏');
   return new Uint8Array(
-    await crypto.subtle.decrypt(
+    await requireCrypto().decrypt(
       {
         name: 'AES-GCM',
         iv: bytes.slice(0, 12),

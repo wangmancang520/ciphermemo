@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  cryptoAvailability,
+  requireCrypto,
   derive,
   newKdf,
   random,
@@ -72,5 +74,32 @@ describe('客户端加密', () => {
   it('拒绝短密码与不支持的派生参数', async () => {
     expect(() => validatePassword('short')).toThrow();
     await expect(derive('long password', { ...newKdf(), memory: 1 })).rejects.toThrow();
+  });
+});
+
+describe('加密环境检测', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('可用的 Web Crypto 正常通过', () => {
+    expect(cryptoAvailability()).toBe('ready');
+    expect(requireCrypto()).toBe(globalThis.crypto.subtle);
+  });
+  it('非安全上下文明确提示 HTTPS，且派生凭证前就拒绝操作', async () => {
+    const kdf = newKdf();
+    vi.stubGlobal('isSecureContext', false);
+    expect(cryptoAvailability()).toBe('insecure');
+    expect(() => requireCrypto()).toThrow('HTTPS');
+    await expect(derive('test password long enough', kdf)).rejects.toThrow('HTTPS');
+  });
+  it('安全上下文中缺少 subtle 时提示更换浏览器，不抛出原始 TypeError', async () => {
+    vi.stubGlobal('isSecureContext', true);
+    vi.stubGlobal('crypto', {});
+    expect(cryptoAvailability()).toBe('unsupported');
+    await expect(importKey(new Uint8Array(32))).rejects.toThrow('当前浏览器未提供');
+  });
+  it('缺少 crypto 或加密方法时仍能检测', () => {
+    vi.stubGlobal('crypto', undefined);
+    expect(cryptoAvailability()).toBe('unsupported');
+    vi.stubGlobal('crypto', { subtle: { importKey: () => {} } });
+    expect(cryptoAvailability()).toBe('unsupported');
   });
 });

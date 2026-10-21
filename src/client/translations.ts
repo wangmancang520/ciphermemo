@@ -1,4 +1,8 @@
 export const english: Record<string, string> = {
+  '请通过 HTTPS 安全连接打开网站后再登录。': 'Open this site over HTTPS before signing in.',
+  '当前浏览器未提供所需的加密功能，请使用最新版 Chrome、Edge、Firefox 或 Safari 打开。':
+    'This browser does not provide the required cryptography features. Open the site in an up-to-date Chrome, Edge, Firefox, or Safari browser.',
+  '使用 HTTPS 安全连接': 'Open secure HTTPS connection',
   '撤销 {device} 的访问？': 'Revoke access for {device}?',
   '正在备份附件 {current}/{total}…': 'Backing up attachment {current}/{total}…',
   '正在导入 {current}/{total}…': 'Importing {current}/{total}…',
