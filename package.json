@@ -12,10 +12,11 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "wrangler deploy",
     "cf:deploy": "wrangler deploy",
     "setup:local": "node scripts/setup-local.mjs",
-    "format": "prettier --write src tests scripts package.json tsconfig.json vite.config.ts vitest.config.ts wrangler.jsonc .github README.md .prettierrc.json index.html"
+    "format": "prettier --write src tests scripts package.json tsconfig.json vite.config.ts vitest.config.ts wrangler.jsonc .github README.md .prettierrc.json index.html",
+    "deploy:local": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "dompurify": "^3.3.0",
@@ -39,5 +40,18 @@
     "vite": "^7.1.0",
     "vitest": "^3.2.0",
     "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "自动创建私人空间的 D1 数据库，仅保存内容密文和必要索引。"
+      },
+      "FILES": {
+        "description": "自动创建私有 R2 存储桶，用于保存加密图片和文件；请先在 Cloudflare 账号中启用 R2。"
+      },
+      "SETUP_TOKEN": {
+        "description": "请填写至少 32 个字符的独立随机初始化口令。部署后首次打开网站时需要输入它；它不是你的登录密码。请勿使用示例值或将真实口令提交到 GitHub。"
+      }
+    }
   }
 }

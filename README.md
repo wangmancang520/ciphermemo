@@ -1,5 +1,7 @@
 # CipherMemo
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fwangmancang520%2Fciphermemo)
+
 一个只属于自己的在线加密备忘录 / 轻量保险箱。使用账号密码访问，支持 Markdown、账号密码、激活密钥、图片和文件。前后端、数据库、对象存储全部运行在 Cloudflare，无需 VPS。
 
 **当前版本：0.1.0。单账号，不开放注册，无应用层单文件或空间容量配额，显示实际内容用量。**
@@ -22,22 +24,22 @@
 
 项目使用 Workers Static Assets + Workers API + D1 + 私有 R2。数据库表在首次 API 请求时幂等初始化；无需手动运行建表 SQL。资源声明位于 `wrangler.jsonc`。
 
-### 当前私有仓库的推荐方式
+### 一键部署（推荐）
 
-1. 在 Cloudflare Dashboard → Workers & Pages → 创建应用 → 从 Git 仓库导入，选择此私有仓库。需要让 Cloudflare 的 GitHub 集成访问这个仓库。
-2. 构建命令设为 `npm run build`，部署命令设为 `npm run cf:deploy`，根目录保持仓库根目录。
-3. 配置运行时 Secret **`SETUP_TOKEN`**：至少 32 个字符的独立随机口令。它只用于首次初始化，不是你的登录密码。若导入流程只设置了构建变量，请在 Worker 的 Settings → Variables and Secrets 中另行添加运行时 Secret。
-4. 部署会根据 Wrangler 声明创建 / 绑定 D1 与 R2。账号需先开通 R2；如果有同名资源冲突，请修改资源名，或在配置中填写已有资源的数据库 ID / 存储桶名称。
-5. 打开 Worker 地址，输入初始化口令、用户名和至少 14 字符的登录密码。保存离线恢复密钥后进入空间。
-6. 初始化成功后可以删除运行时 `SETUP_TOKEN`。数据库已存在时初始化入口会关闭。
+点击 README 顶部的 **Deploy to Cloudflare** 按钮即可开始，无需安装 Node.js、手动创建数据库或准备 VPS。
 
-Cloudflare 账号授权、R2 服务开通、可能的支付资料以及自定义域名由部署者在自己的账号完成。R2 桶不要开启公共访问。
+1. 登录 Cloudflare，并按页面提示关联 GitHub / GitLab。Cloudflare 会把这个公开模板复制到你的 Git 账号，并配置自动构建和部署。
+2. 确认应用名称。保留自动识别的构建命令 `npm run build` 和部署命令 `npm run deploy`（即 `wrangler deploy`）；项目根目录保持默认。
+3. 在部署表单的 Secret **`SETUP_TOKEN`** 中填写至少 32 个字符的独立随机初始化口令，并自行妥善保存。页面会从 `.dev.vars.example` 识别这个 Secret 配置，说明来自 `package.json` 的 Cloudflare 绑定描述。**不要把真实口令写进源码或示例文件。**
+4. 点击部署。Cloudflare 根据 `wrangler.jsonc` 自动创建并绑定 **一个 D1 数据库和一个私有 R2 存储桶**，同时上传网页和 Worker API。资源采用应用名称前缀，配置中不预填账号 ID、数据库 ID 或公共存储桶地址。
+5. 部署成功后打开生成的 Worker 地址，输入上一步的初始化口令，设置你的用户名和至少 14 字符的登录密码。数据库表自动初始化，无需执行 SQL。
+6. 下载并离线保存恢复密钥，然后进入私人空间。之后仅使用账号密码登录，没有公开注册接口；初始化口令不用于日常登录。
 
-### 官方部署按钮
+首次部署仍需完成 Cloudflare / Git 账号授权，且 Cloudflare 账号必须先开通 R2（可能需要支付资料）。如果部署表单未显示 `SETUP_TOKEN`，请在 Worker → Settings → Variables and Secrets 中以 **Secret** 类型添加，再刷新网站初始化；没有有效口令时网站不会允许创建账号。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fwangmancang520%2Fciphermemo)
+初始化成功后可以删除运行时 `SETUP_TOKEN`。不要将 R2 桶设为公开，也不要把应用的备忘录、备份或 `.dev.vars` 提交到 Git 仓库。**仓库公开的是程序源码，不会公开部署在你账号里的空间内容。**
 
-Cloudflare 官方按钮的文档面向**公开模板仓库**。本项目当前为私有仓库，不保证按钮能直接读取；请使用上面的私有 Git 导入流程。若以后发布公开模板，可直接复用该按钮，自动创建 D1、R2 和 Worker。首次仍需设置初始化 Secret。
+如果你的 Cloudflare 已有同名应用，部署时选择一个新名称；如需复用已有存储，请显式绑定对应资源，避免误建一个空空间。
 
 ### 命令行备选方式
 
@@ -46,7 +48,7 @@ Cloudflare 官方按钮的文档面向**公开模板仓库**。本项目当前�
 ```sh
 npm ci
 npx wrangler login
-npm run deploy
+npm run deploy:local
 npx wrangler secret put SETUP_TOKEN
 ```
 

@@ -9,7 +9,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": true,
   },
-  "d1_databases": [{ "binding": "DB", "database_name": "ciphermemo-db" }],
+  "d1_databases": [{ "binding": "DB" }],
   "r2_buckets": [{ "binding": "FILES" }],
   "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
   "triggers": { "crons": ["17 3 * * *"] },
