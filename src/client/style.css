@@ -2633,3 +2633,109 @@ textarea::placeholder {
     padding: 13px 18px;
   }
 }
+
+/* Personal profile editor and the clickable account card. */
+button.space-label {
+  width: 100%;
+  text-align: left;
+  position: relative;
+  cursor: pointer;
+}
+button.space-label:hover,
+button.space-label:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.space-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-edit-hint {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 160ms;
+}
+.space-label:hover .profile-edit-hint,
+.space-label:focus-visible .profile-edit-hint {
+  opacity: 1;
+}
+.avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.profile-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 8px 0 18px;
+}
+.profile-photo {
+  width: 88px;
+  height: 88px;
+  flex: 0 0 88px;
+  border-radius: 24px;
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 34px;
+  font-weight: 600;
+}
+.profile-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-photo-controls {
+  min-width: 0;
+}
+.profile-photo-controls p {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.profile-upload {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.profile-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.profile-upload:focus-within {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.profile-form input[readonly] {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+.profile-form .field-help {
+  margin-top: -8px;
+}
+@media (max-width: 650px) {
+  .profile-photo-row {
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .profile-photo {
+    width: 72px;
+    height: 72px;
+    flex-basis: 72px;
+    border-radius: 20px;
+  }
+}

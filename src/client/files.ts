@@ -39,6 +39,7 @@ export async function uploadFile(
       progress(Math.round(((part + 1) / chunks) * 100));
     }
     await post(`/attachments/${id}/complete`, { chunks });
+    return id;
   } catch (error) {
     await api(`/attachments/${id}`, { method: 'DELETE' }).catch(() => {});
     throw error;

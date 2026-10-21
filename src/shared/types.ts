@@ -64,3 +64,7 @@ export type Usage = {
   pending: number;
 };
 export type SessionInfo = { vault: VaultHeader; device: Device };
+
+export const PROFILE_OWNER_ID = '00000000-0000-4000-8000-000000000001';
+export type ProfileContent = { nickname: string; avatarId: string | null };
+export type ProfileRecord = { payload: Envelope | null; avatarId: string | null; revision: number };

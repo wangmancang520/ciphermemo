@@ -1,4 +1,31 @@
 export const english: Record<string, string> = {
+  邮箱: 'Email',
+  输入你的邮箱: 'Enter your email',
+  返回邮箱密码登录: 'Back to email sign in',
+  编辑个人信息: 'Edit profile',
+  头像: 'Avatar',
+  头像预览: 'Avatar preview',
+  上传头像: 'Upload avatar',
+  移除头像: 'Remove avatar',
+  昵称: 'Nickname',
+  保存个人信息: 'Save profile',
+  '昵称仅用于卡片显示，留空使用默认名称。':
+    'Your nickname appears on the space card. Leave blank for the default name.',
+  'JPG、PNG、WebP 或 AVIF，最大 5MB': 'JPG, PNG, WebP or AVIF, up to 5 MB',
+  '请选择不超过 5MB 的 JPG、PNG、WebP 或 AVIF 图片':
+    'Choose a JPG, PNG, WebP or AVIF image up to 5 MB.',
+  '无法读取这张图片，请选择其他图片': 'Unable to read this image. Please choose another.',
+  '正在保存头像与昵称…': 'Saving avatar and nickname\u2026',
+  '正在保存个人信息…': 'Saving profile\u2026',
+  个人信息格式不正确: 'Invalid profile data',
+  '头像文件不可用，请重新上传': 'The avatar file is unavailable. Please upload it again.',
+  '个人信息已变化，请关闭弹窗并刷新后重试':
+    'Your profile has changed. Close this dialog, refresh, and try again.',
+  请先在个人信息中更换或移除头像: 'Replace or remove this avatar in your profile first.',
+  请填写邮箱: 'Enter your email',
+  邮箱或密码不正确: 'Incorrect email or password',
+  邮箱或恢复密钥不正确: 'Incorrect email or recovery key',
+
   '5GB 参考容量': '5 GB reference',
   '正在读取用量…': 'Loading usage…',
   '请通过 HTTPS 安全连接打开网站后再登录。': 'Open this site over HTTPS before signing in.',

@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import schema from '../../migrations/0001_initial.sql';
-import type { Envelope, Kdf } from '../shared/types';
+import { PROFILE_OWNER_ID, type Envelope, type Kdf } from '../shared/types';
 
 type Env = { DB: D1Database; FILES: R2Bucket; ASSETS: Fetcher; SETUP_TOKEN: string };
 type Vault = {
@@ -70,6 +70,11 @@ function token(value: unknown): string {
 function id(value: string): string {
   if (!/^[0-9a-f-]{36}$/.test(value)) fail('无效的对象标识');
   return value;
+}
+function noteId(value: string): string {
+  const valueId = id(value);
+  if (valueId === PROFILE_OWNER_ID) fail('无效的对象标识');
+  return valueId;
 }
 function envelope(value: unknown): Envelope {
   const v = value as Envelope;
@@ -211,7 +216,7 @@ app.post('/api/setup', async (c) => {
   )
     fail('初始化口令不正确', 403);
   if (typeof b.username !== 'string' || !b.username.trim() || b.username.length > 128)
-    fail('请填写用户名');
+    fail('请填写邮箱');
   const now = Date.now();
   const r = await c.env.DB.prepare(
     `INSERT OR IGNORE INTO vault(id,username,auth_hash,kdf,wrapped_key,recovery_hash,recovery_wrapped_key,created_at) VALUES('personal',?,?,?,?,?,?,?)`,
@@ -239,7 +244,7 @@ app.post('/api/auth/login', async (c) => {
   const b = await c.req.json();
   const v = await vault(c);
   if (!v || !equal(await digest(String(b.auth)), v.auth_hash) || b.username !== v.username)
-    fail('用户名或密码不正确', 401);
+    fail('邮箱或密码不正确', 401);
   return issue(c, v, b.trusted === true, b.label);
 });
 app.post('/api/auth/recover', async (c) => {
@@ -251,7 +256,7 @@ app.post('/api/auth/recover', async (c) => {
     b.username !== v.username ||
     !equal(await digest(String(b.recoveryAuth)), v.recovery_hash)
   )
-    fail('用户名或恢复密钥不正确', 401);
+    fail('邮箱或恢复密钥不正确', 401);
   const r = await c.env.DB.prepare(
     'UPDATE vault SET auth_hash=?,kdf=?,wrapped_key=?,revision=revision+1 WHERE id=? AND revision=?',
   )
@@ -277,7 +282,7 @@ app.post('/api/auth/recovery-key', async (c) => {
     b.username !== v.username ||
     !equal(await digest(String(b.recoveryAuth)), v.recovery_hash)
   )
-    fail('用户名或恢复密钥不正确', 401);
+    fail('邮箱或恢复密钥不正确', 401);
   return c.json({ recoveryWrappedKey: JSON.parse(v.recovery_wrapped_key) });
 });
 app.use('/api/*', async (c, next) => {
@@ -364,7 +369,7 @@ app.get('/api/notes', async (c) => {
   return c.json(rows.results.map(noteRow));
 });
 app.put('/api/notes/:id', async (c) => {
-  const nid = id(c.req.param('id'));
+  const nid = noteId(c.req.param('id'));
   const b = await c.req.json();
   const p = JSON.stringify(envelope(b.payload));
   const bytes = encoder.encode(p).length;
@@ -397,7 +402,7 @@ app.post('/api/notes/:id/trash', async (c) => {
   await c.env.DB.prepare(
     'UPDATE notes SET deleted_at=?,updated_at=?,revision=revision+1 WHERE id=? AND deleted_at IS NULL',
   )
-    .bind(now, now, id(c.req.param('id')))
+    .bind(now, now, noteId(c.req.param('id')))
     .run();
   return c.json({ ok: true });
 });
@@ -405,14 +410,23 @@ app.post('/api/notes/:id/restore', async (c) => {
   const r = await c.env.DB.prepare(
     'UPDATE notes SET deleted_at=NULL,updated_at=?,revision=revision+1 WHERE id=? AND deleted_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM deletions WHERE note_id=notes.id)',
   )
-    .bind(Date.now(), id(c.req.param('id')))
+    .bind(Date.now(), noteId(c.req.param('id')))
     .run();
   if (!r.meta.changes) fail('内容不存在或正在永久删除', 409);
   return c.json({ ok: true });
 });
 async function removeAttachment(env: Env, aid: string) {
   // Mark first: no new download or upload can start after a deletion is scheduled.
-  await env.DB.prepare("UPDATE attachments SET status='deleting' WHERE id=?").bind(aid).run();
+  const mark = await env.DB.prepare(
+    "UPDATE attachments SET status='deleting' WHERE id=? AND NOT EXISTS(SELECT 1 FROM profiles WHERE avatar_id=attachments.id)",
+  )
+    .bind(aid)
+    .run();
+  if (
+    !mark.meta.changes &&
+    (await env.DB.prepare('SELECT id FROM profiles WHERE avatar_id=?').bind(aid).first())
+  )
+    fail('请先在个人信息中更换或移除头像', 409);
   let cursor: string | undefined;
   do {
     const list = await env.FILES.list({ prefix: `files/${aid}/`, cursor });
@@ -442,13 +456,60 @@ async function removeNote(env: Env, nid: string) {
   ]);
 }
 app.delete('/api/notes/:id', async (c) => {
-  const nid = id(c.req.param('id'));
+  const nid = noteId(c.req.param('id'));
   const n = await c.env.DB.prepare('SELECT id FROM notes WHERE id=? AND deleted_at IS NOT NULL')
     .bind(nid)
     .first();
   if (!n) fail('请先移入回收站', 409);
   await removeNote(c.env, nid);
   return c.json({ ok: true });
+});
+app.get('/api/profile', async (c) => {
+  const row = await c.env.DB.prepare(
+    "SELECT payload,avatar_id,revision FROM profiles WHERE id='personal'",
+  ).first<{ payload: string; avatar_id: string | null; revision: number }>();
+  return c.json(
+    row
+      ? { payload: JSON.parse(row.payload), avatarId: row.avatar_id, revision: row.revision }
+      : { payload: null, avatarId: null, revision: 0 },
+  );
+});
+app.put('/api/profile', async (c) => {
+  const b = await c.req.json();
+  const payload = JSON.stringify(envelope(b.payload));
+  if (
+    payload.length > 4096 ||
+    !Number.isSafeInteger(b.revision) ||
+    b.revision < 0 ||
+    (b.avatarId !== null && typeof b.avatarId !== 'string')
+  )
+    fail('个人信息格式不正确');
+  const avatarId = b.avatarId === null ? null : id(b.avatarId);
+  if (
+    avatarId &&
+    !(await c.env.DB.prepare(
+      "SELECT id FROM attachments WHERE id=? AND note_id=? AND status='ready'",
+    )
+      .bind(avatarId, PROFILE_OWNER_ID)
+      .first())
+  )
+    fail('头像文件不可用，请重新上传');
+  const exists =
+    "(? IS NULL OR EXISTS(SELECT 1 FROM attachments WHERE id=? AND note_id=? AND status='ready'))";
+  const r =
+    b.revision === 0
+      ? await c.env.DB.prepare(
+          `INSERT OR IGNORE INTO profiles(id,payload,avatar_id,revision,updated_at) SELECT 'personal',?,?,1,? WHERE ${exists}`,
+        )
+          .bind(payload, avatarId, Date.now(), avatarId, avatarId, PROFILE_OWNER_ID)
+          .run()
+      : await c.env.DB.prepare(
+          `UPDATE profiles SET payload=?,avatar_id=?,revision=revision+1,updated_at=? WHERE id='personal' AND revision=? AND ${exists}`,
+        )
+          .bind(payload, avatarId, Date.now(), b.revision, avatarId, avatarId, PROFILE_OWNER_ID)
+          .run();
+  if (!r.meta.changes) fail('个人信息已变化，请关闭弹窗并刷新后重试', 409);
+  return c.json({ payload: JSON.parse(payload), avatarId, revision: b.revision + 1 });
 });
 app.get('/api/usage', async (c) => {
   const n = await c.env.DB.prepare(
@@ -457,21 +518,27 @@ app.get('/api/usage', async (c) => {
   const a = await c.env.DB.prepare(
     "SELECT COALESCE(SUM(CASE WHEN n.deleted_at IS NULL AND a.status='ready' THEN a.bytes+LENGTH(CAST(a.metadata AS BLOB)) ELSE 0 END),0) AS files,COALESCE(SUM(CASE WHEN n.deleted_at IS NOT NULL THEN a.bytes+LENGTH(CAST(a.metadata AS BLOB)) ELSE 0 END),0) AS trash,COUNT(CASE WHEN n.deleted_at IS NULL AND a.status='ready' THEN 1 END) AS attachments,COALESCE(SUM(CASE WHEN n.deleted_at IS NULL AND a.status<>'ready' THEN a.bytes+LENGTH(CAST(a.metadata AS BLOB)) ELSE 0 END),0) AS pending FROM attachments a LEFT JOIN notes n ON n.id=a.note_id",
   ).first<{ files: number; trash: number; attachments: number; pending: number }>();
+  const profile = await c.env.DB.prepare(
+    'SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))),0) AS bytes FROM profiles',
+  ).first<{ bytes: number }>();
+  const text = n!.text + profile!.bytes;
   const trash = n!.trash + a!.trash;
   return c.json({
-    text: n!.text,
+    text,
     files: a!.files,
     trash,
     pending: a!.pending,
-    total: n!.text + a!.files + trash + a!.pending,
+    total: text + a!.files + trash + a!.pending,
     notes: n!.notes,
     attachments: a!.attachments,
   });
 });
 app.get('/api/attachments', async (c) => {
-  const rows = await c.env.DB.prepare("SELECT * FROM attachments WHERE status='ready'").all<
-    Record<string, unknown>
-  >();
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM attachments WHERE status='ready' AND (note_id<>? OR id=(SELECT avatar_id FROM profiles WHERE id='personal'))",
+  )
+    .bind(PROFILE_OWNER_ID)
+    .all<Record<string, unknown>>();
   return c.json(rows.results.map((a) => ({ ...a, metadata: JSON.parse(a.metadata as string) })));
 });
 app.post('/api/attachments', async (c) => {
@@ -480,9 +547,9 @@ app.post('/api/attachments', async (c) => {
   const nid = id(b.noteId);
   const meta = JSON.stringify(envelope(b.metadata));
   const r = await c.env.DB.prepare(
-    'INSERT OR IGNORE INTO attachments(id,note_id,metadata,created_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM notes WHERE id=? AND deleted_at IS NULL)',
+    'INSERT OR IGNORE INTO attachments(id,note_id,metadata,created_at) SELECT ?,?,?,? WHERE (?=? OR EXISTS(SELECT 1 FROM notes WHERE id=? AND deleted_at IS NULL))',
   )
-    .bind(aid, nid, meta, Date.now(), nid)
+    .bind(aid, nid, meta, Date.now(), nid, PROFILE_OWNER_ID, nid)
     .run();
   if (!r.meta.changes) fail('附件已存在或备忘录不可用', 409);
   return c.json({ ok: true });
@@ -492,7 +559,7 @@ app.put('/api/attachments/:id/chunks/:part', async (c) => {
   const part = Number(c.req.param('part'));
   if (!Number.isSafeInteger(part) || part < 0) fail('无效分块');
   const a = await c.env.DB.prepare(
-    "SELECT a.id FROM attachments a JOIN notes n ON n.id=a.note_id WHERE a.id=? AND a.status='pending' AND n.deleted_at IS NULL",
+    `SELECT a.id FROM attachments a LEFT JOIN notes n ON n.id=a.note_id WHERE a.id=? AND a.status='pending' AND (a.note_id='${PROFILE_OWNER_ID}' OR (n.id IS NOT NULL AND n.deleted_at IS NULL))`,
   )
     .bind(aid)
     .first();
@@ -513,7 +580,7 @@ app.put('/api/attachments/:id/chunks/:part', async (c) => {
   }
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "INSERT OR IGNORE INTO chunks(attachment_id,part,bytes) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM attachments a JOIN notes n ON n.id=a.note_id WHERE a.id=? AND a.status='pending' AND n.deleted_at IS NULL)",
+      `INSERT OR IGNORE INTO chunks(attachment_id,part,bytes) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM attachments a LEFT JOIN notes n ON n.id=a.note_id WHERE a.id=? AND a.status='pending' AND (a.note_id='${PROFILE_OWNER_ID}' OR (n.id IS NOT NULL AND n.deleted_at IS NULL)))`,
     ).bind(aid, part, length, aid),
     c.env.DB.prepare(
       'UPDATE attachments SET bytes=(SELECT COALESCE(SUM(bytes),0) FROM chunks WHERE attachment_id=?) WHERE id=?',
@@ -540,7 +607,7 @@ app.post('/api/attachments/:id/complete', async (c) => {
   const b = await c.req.json();
   if (!Number.isSafeInteger(b.chunks) || b.chunks < 1) fail('分块数量不正确');
   const r = await c.env.DB.prepare(
-    "UPDATE attachments SET status='ready',chunks=? WHERE id=? AND status='pending' AND EXISTS(SELECT 1 FROM notes WHERE id=attachments.note_id AND deleted_at IS NULL) AND (SELECT COUNT(*) FROM chunks WHERE attachment_id=?)=? AND (SELECT MIN(part) FROM chunks WHERE attachment_id=?)=0 AND (SELECT MAX(part) FROM chunks WHERE attachment_id=?)=?",
+    `UPDATE attachments SET status='ready',chunks=? WHERE id=? AND status='pending' AND (note_id='${PROFILE_OWNER_ID}' OR EXISTS(SELECT 1 FROM notes WHERE id=attachments.note_id AND deleted_at IS NULL)) AND (SELECT COUNT(*) FROM chunks WHERE attachment_id=?)=? AND (SELECT MIN(part) FROM chunks WHERE attachment_id=?)=0 AND (SELECT MAX(part) FROM chunks WHERE attachment_id=?)=?`,
   )
     .bind(b.chunks, aid, aid, b.chunks, aid, aid, b.chunks - 1)
     .run();
@@ -603,9 +670,9 @@ export async function cleanup(env: Env) {
     .all<{ id: string }>();
   for (const n of notes.results) await removeNote(env, n.id);
   const old = await env.DB.prepare(
-    "SELECT id FROM attachments WHERE status='deleting' OR (status='pending' AND created_at<?) LIMIT 50",
+    "SELECT id FROM attachments WHERE status='deleting' OR (status='pending' AND created_at<?) OR (note_id=? AND status='ready' AND created_at<? AND NOT EXISTS(SELECT 1 FROM profiles WHERE avatar_id=attachments.id)) LIMIT 50",
   )
-    .bind(now - DAY)
+    .bind(now - DAY, PROFILE_OWNER_ID, now - DAY)
     .all<{ id: string }>();
   for (const a of old.results) await removeAttachment(env, a.id);
   await env.DB.batch([

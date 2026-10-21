@@ -31,3 +31,8 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 CREATE TABLE IF NOT EXISTS deletions (note_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS maintenance (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY CHECK (id = 'personal'), payload TEXT NOT NULL,
+  avatar_id TEXT, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);

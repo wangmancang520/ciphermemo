@@ -45,6 +45,9 @@ import {
 } from 'lucide-react';
 import { t, locale, clockTime, usePreferences } from './preferences';
 import Preferences from './PreferenceControls';
+import Modal from './Modal';
+import ProfileEditor, { useAvatar, openProfile, emptyProfile } from './ProfileEditor';
+import { PROFILE_OWNER_ID, type ProfileContent, type ProfileRecord } from '../shared/types';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { api, post, ApiError } from './api';
@@ -118,71 +121,6 @@ function Brand() {
       <span>
         CipherMemo<small>{t('你的私人空间')}</small>
       </span>
-    </div>
-  );
-}
-function Modal({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
-  useEffect(() => {
-    const old = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeRef.current();
-      if (e.key === 'Tab') {
-        const items = ref.current?.querySelectorAll<HTMLElement>(
-          'button,input,select,textarea,a[href]',
-        );
-        if (!items?.length) return;
-        const first = items[0],
-          last = items[items.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('keydown', key);
-      old?.focus();
-    };
-  }, []);
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="modal"
-        ref={ref}
-        tabIndex={-1}
-      >
-        <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="icon-button" aria-label={t('关闭')} onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-        {children}
-      </div>
     </div>
   );
 }
@@ -441,7 +379,7 @@ function Auth({
                   saveBlob(
                     new Blob(
                       [
-                        `CipherMemo 恢复密钥\n用户名：${created.u.info.vault.username}\n地址：${location.origin}\n恢复密钥：${created.recovery}\n请离线安全保存，不要上传到本空间。`,
+                        `CipherMemo 恢复密钥\n邮箱：${created.u.info.vault.username}\n地址：${location.origin}\n恢复密钥：${created.recovery}\n请离线安全保存，不要上传到本空间。`,
                       ],
                       { type: 'text/plain;charset=utf-8' },
                     ),
@@ -522,12 +460,14 @@ function Auth({
                   </label>
                 )}
                 <label className="field">
-                  <span>{t('用户名')}</span>
+                  <span>{t('邮箱')}</span>
                   <input
                     required
-                    name="username"
+                    name="email"
+                    type={mode === 'setup' ? 'email' : 'text'}
+                    inputMode="email"
                     autoComplete="username"
-                    placeholder={t('输入你的用户名')}
+                    placeholder={t('输入你的邮箱')}
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                   />
@@ -616,7 +556,7 @@ function Auth({
                     setError('');
                   }}
                 >
-                  {mode === 'login' ? t('忘记密码？使用恢复密钥') : t('返回账号密码登录')}
+                  {mode === 'login' ? t('忘记密码？使用恢复密钥') : t('返回邮箱密码登录')}
                 </button>
               )}
               <div className="auth-security">
@@ -1230,7 +1170,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'new' | 'settings' | 'usage' | 'trash' | null>(null);
+  const [modal, setModal] = useState<'new' | 'settings' | 'usage' | 'trash' | 'profile' | null>(
+    null,
+  );
+  const [profile, setProfile] = useState<{ record: ProfileRecord; content: ProfileContent }>(
+    emptyProfile,
+  );
+  const [profileReady, setProfileReady] = useState(false);
   const [saveState, setSaveState] = useState('已保存');
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const editor = useRef<EditorHandle>(null);
@@ -1242,6 +1188,11 @@ export default function App() {
     setNotes((old) => old.map((x) => (x.id === n.id ? n : x)));
     setSyncedAt(Date.now());
   }, []);
+  const avatar = useAvatar(
+    unlocked?.key ?? null,
+    attachments.find((a) => a.id === profile.content.avatarId) ?? null,
+    showError,
+  );
   const load = useCallback(
     async (u: Unlocked) => {
       const run = ++gate.current;
@@ -1266,11 +1217,15 @@ export default function App() {
             ...n,
             content: await crypt.open<NoteContent>(u.key, n.payload, `note:${n.id}`),
           });
-        const [files, space] = await Promise.all([
+        const [files, space, profileRecord] = await Promise.all([
           api<Attachment[]>('/attachments'),
           api<Usage>('/usage'),
+          api<ProfileRecord>('/profile'),
         ]);
+        const profileContent = await openProfile(u.key, profileRecord);
         if (gate.current !== run) return;
+        setProfile({ record: profileRecord, content: profileContent });
+        setProfileReady(true);
         setNotes(opened);
         setAttachments(files);
         setUsage(space);
@@ -1307,6 +1262,8 @@ export default function App() {
     setSyncedAt(null);
     setSyncFailed(false);
     setNotes([]);
+    setProfile(emptyProfile());
+    setProfileReady(false);
     setAttachments([]);
     setUsage(null);
     setSelected(null);
@@ -1539,18 +1496,31 @@ export default function App() {
       )}
       <aside className={`sidebar ${mobileSidebar ? 'mobile-open' : ''}`}>
         <Brand />
-        <div className="space-label">
+        <button
+          className="space-label"
+          type="button"
+          aria-label={t('编辑个人信息')}
+          disabled={!profileReady}
+          onClick={() => void navigate(() => setModal('profile'))}
+        >
           <span className="avatar" aria-hidden="true">
-            {unlocked.info.vault.username.charAt(0).toUpperCase()}
+            {avatar ? (
+              <img src={avatar} alt="" />
+            ) : (
+              (profile.content.nickname || unlocked.info.vault.username).charAt(0).toUpperCase()
+            )}
             <span className="avatar-status">
               <ShieldCheck size={12} />
             </span>
           </span>
           <div className="space-identity">
-            <strong>{t('我的私人空间')}</strong>
+            <strong title={profile.content.nickname || t('我的私人空间')}>
+              {profile.content.nickname || t('我的私人空间')}
+            </strong>
             <span title={unlocked.info.vault.username}>{unlocked.info.vault.username}</span>
           </div>
-        </div>
+          <Pencil size={14} className="profile-edit-hint" aria-hidden="true" />
+        </button>
         <button
           className="button primary new-button"
           onClick={() => void navigate(() => setModal('new'))}
@@ -2025,12 +1995,26 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {modal === 'profile' && (
+        <ProfileEditor
+          vaultKey={unlocked.key}
+          email={unlocked.info.vault.username}
+          profile={profile}
+          avatar={avatar}
+          onClose={() => setModal(null)}
+          onSaved={(record, content) => {
+            setProfile({ record, content });
+            setSyncedAt(Date.now());
+            setModal(null);
+            void refreshFiles().catch(showError);
+          }}
+        />
+      )}
       {modal === 'settings' && (
         <SettingsModal
           unlocked={unlocked}
           raw={rawKey.current!}
           notes={notes}
-          attachments={attachments}
           onClose={() => setModal(null)}
           onError={showError}
           onLogout={() => void lock('账号设置已更新，请重新登录。')}
@@ -2051,12 +2035,12 @@ type Backup = {
   vault: VaultHeader;
   notes: NoteRecord[];
   attachments: (Attachment & { parts: string[] })[];
+  profile?: ProfileRecord;
 };
 function SettingsModal({
   unlocked,
   raw,
   notes,
-  attachments,
   onClose,
   onError,
   onLogout,
@@ -2065,7 +2049,6 @@ function SettingsModal({
   unlocked: Unlocked;
   raw: Uint8Array<ArrayBuffer>;
   notes: OpenNote[];
-  attachments: Attachment[];
   onClose: () => void;
   onError: (e: unknown) => void;
   onLogout: () => void;
@@ -2109,6 +2092,15 @@ function SettingsModal({
   async function exportBackup() {
     setBusy('正在整理备份…');
     try {
+      const [profile, attachments] = await Promise.all([
+        api<ProfileRecord>('/profile'),
+        api<Attachment[]>('/attachments'),
+      ]);
+      if (
+        profile.avatarId &&
+        !attachments.some((a) => a.id === profile.avatarId && a.note_id === PROFILE_OWNER_ID)
+      )
+        throw new Error('个人信息已变化，请关闭弹窗并刷新后重试');
       const files: Backup['attachments'] = [];
       for (const a of attachments) {
         setBusy(
@@ -2127,6 +2119,7 @@ function SettingsModal({
         version: 1,
         exportedAt: new Date().toISOString(),
         vault: unlocked.info.vault,
+        profile,
         notes: notes.map(({ content: _, ...n }) => n),
         attachments: files,
       };
@@ -2160,6 +2153,14 @@ function SettingsModal({
       const oldKey = await crypt.importKey(oldRaw);
       oldRaw.fill(0);
       // Authenticate the full backup before writing any records. File bytes are also checked per chunk.
+      const restoredProfile = backup.profile ? await openProfile(oldKey, backup.profile) : null;
+      if (
+        restoredProfile?.avatarId &&
+        !backup.attachments.some(
+          (a) => a.id === restoredProfile.avatarId && a.note_id === PROFILE_OWNER_ID,
+        )
+      )
+        throw new Error('备份附件索引不完整');
       const contents = new Map<string, NoteContent>();
       for (const n of backup.notes) {
         const content = await crypt.open<NoteContent>(oldKey, n.payload, `note:${n.id}`);
@@ -2173,7 +2174,11 @@ function SettingsModal({
         contents.set(n.id, content);
       }
       for (const a of backup.attachments) {
-        if (!contents.has(a.note_id) || a.parts.length !== a.chunks)
+        if (
+          (!contents.has(a.note_id) &&
+            !(a.note_id === PROFILE_OWNER_ID && a.id === restoredProfile?.avatarId)) ||
+          a.parts.length !== a.chunks
+        )
           throw new Error('备份附件索引不完整');
         const meta = await crypt.open<AttachmentMeta>(oldKey, a.metadata, `attachment:${a.id}`);
         let size = 0;
@@ -2209,6 +2214,43 @@ function SettingsModal({
           );
         }
         if (n.deleted_at) await post(`/notes/${id}/trash`);
+      }
+      if (restoredProfile) {
+        const current = await api<ProfileRecord>('/profile');
+        if (!current.payload) {
+          let avatarId: string | null = null;
+          const image = backup.attachments.find(
+            (a) => a.id === restoredProfile.avatarId && a.note_id === PROFILE_OWNER_ID,
+          );
+          if (restoredProfile.avatarId && !image) throw new Error('备份附件索引不完整');
+          if (image) {
+            const meta = await crypt.open<AttachmentMeta>(
+              oldKey,
+              image.metadata,
+              `attachment:${image.id}`,
+            );
+            const parts: Uint8Array<ArrayBuffer>[] = [];
+            for (let part = 0; part < image.parts.length; part++)
+              parts.push(
+                await crypt.openChunk(oldKey, crypt.unbase64(image.parts[part]), image.id, part),
+              );
+            avatarId = await uploadFile(
+              unlocked.key,
+              PROFILE_OWNER_ID,
+              new window.File(parts, meta.name, { type: meta.type }),
+              () => {},
+            );
+          }
+          const content = { nickname: restoredProfile.nickname, avatarId };
+          await api('/profile', {
+            method: 'PUT',
+            body: JSON.stringify({
+              payload: await crypt.seal(unlocked.key, content, 'profile'),
+              avatarId,
+              revision: current.revision,
+            }),
+          });
+        }
       }
       setBackupPassword('');
       setImportFile(null);
