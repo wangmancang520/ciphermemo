@@ -211,7 +211,11 @@ export const english: Record<string, string> = {
   恢复内容: 'Restore item',
   永久删除: 'Delete forever',
   '给重要的内容，一个安心的归处。': 'A home for everything that matters.',
-  '选择一条内容开始查看，': 'Choose an item to get started,',
+  选择一条内容开始查看: 'Select an item to view',
+  '让想法、账号和文件都有自己的位置。':
+    'Give your ideas, accounts, and files a place of their own.',
+  '从左侧列表选择一条内容，': 'Choose an item from the list on the left,',
+  '记下你的第一条内容，': 'Create your first item,',
   '或记下此刻的想法，收好下一次要用的密钥。':
     'or capture a thought and keep your keys within reach.',
   新建第一条内容: 'Create your first item',

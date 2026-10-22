@@ -1495,6 +1495,7 @@ export default function App() {
       </div>
     );
   const active = notes.find((n) => n.id === selected);
+  const isFirstContent = !busy && notes.length === 0;
   const count = (f: Filter) =>
     notes.filter((n) =>
       f === 'trash'
@@ -1934,15 +1935,21 @@ export default function App() {
                   </span>
                 </div>
                 <span className="eyebrow">A LITTLE SPACE, ALL YOURS</span>
-                <h2>{t('给重要的内容，一个安心的归处。')}</h2>
+                <h2>
+                  {t(isFirstContent ? '给重要的内容，一个安心的归处。' : '选择一条内容开始查看')}
+                </h2>
                 <p>
-                  {t('选择一条内容开始查看，')}
+                  {t(isFirstContent ? '记下你的第一条内容，' : '从左侧列表选择一条内容，')}
                   <br />
-                  {t('或记下此刻的想法，收好下一次要用的密钥。')}
+                  {t(
+                    isFirstContent
+                      ? '让想法、账号和文件都有自己的位置。'
+                      : '或记下此刻的想法，收好下一次要用的密钥。',
+                  )}
                 </p>
                 <button className="button primary" onClick={() => setModal('new')}>
                   <Plus size={17} />
-                  {t('新建第一条内容')}
+                  {t(isFirstContent ? '新建第一条内容' : '新建内容')}
                 </button>
                 <div className="empty-foot">
                   <ShieldCheck size={14} />
