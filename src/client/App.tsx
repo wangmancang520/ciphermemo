@@ -482,7 +482,9 @@ function Auth({
           )}
         </section>
       </main>
-      <footer className="auth-footer">CipherMemo 0.1 · Powered by GPT-6.1 Sol</footer>
+      <footer className="auth-footer">
+        CipherMemo 0.1 · Powered by GPT-6.1 Sol &amp; Claude Opus 5.5
+      </footer>
     </div>
   );
 }
@@ -2332,7 +2334,9 @@ function SettingsModal({
         </div>
       )}
       {info && <div className="notice">{t(info)}</div>}
-      <div className="settings-footer">CipherMemo 0.1 · Powered by GPT-6.1 Sol</div>
+      <div className="settings-footer">
+        CipherMemo 0.1 · Powered by GPT-6.1 Sol &amp; Claude Opus 5.5
+      </div>
     </Modal>
   );
 }

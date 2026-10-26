@@ -23,7 +23,7 @@
     <a href="CONTRIBUTING.md">参与贡献</a>
   </p>
 
-  <p><strong>Powered by GPT-6.1 Sol</strong> · 本项目由 AI 生成并协助开发。</p>
+  <p><strong>Powered by GPT-6.1 Sol &amp; Claude Opus 5.5</strong> · 本项目由 AI 生成并协助开发。</p>
 </div>
 
 ---
@@ -149,5 +149,5 @@ npx wrangler deploy --dry-run   # 检查 Worker 打包与资源声明
 <div align="center">
   <img src="public/brand/ciphermemo-mark.svg" alt="" width="36" height="36">
   <p><strong>CipherMemo</strong> · A little space. All yours.</p>
-  <p>Powered by GPT-6.1 Sol · Built on Cloudflare</p>
+  <p>Powered by GPT-6.1 Sol &amp; Claude Opus 5.5 · Built on Cloudflare</p>
 </div>
