@@ -686,10 +686,12 @@ const Editor = forwardRef<
     return () => window.removeEventListener('beforeunload', warn);
   }, []);
   async function upload(files: FileList | File[] | null) {
-    if (!files?.length) return;
+    // Copy before the first await: an input's FileList is live and is emptied when its value resets.
+    const list = Array.from(files ?? []);
+    if (!list.length) return;
     try {
       await flush();
-      for (const file of Array.from(files)) {
+      for (const file of list) {
         setUploading(`${file.name} · 0%`);
         await uploadFile(vaultKey, note.id, file, (p) => setUploading(`${file.name} · ${p}%`));
       }
