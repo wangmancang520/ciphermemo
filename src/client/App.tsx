@@ -1596,6 +1596,7 @@ export default function App() {
                     n.content.kind === 'credential' ? n.content.username || '' : n.content.body
                   )
                     .trim()
+                    .replace(/\n\s*\n+/g, '\n')
                     .slice(0, 100);
                   return (
                     <button
