@@ -217,7 +217,6 @@ export default function ProfileEditor({
             onChange={(e) => setNickname(e.target.value)}
           />
         </label>
-        <p className="field-help">{t('昵称仅用于卡片显示，留空使用默认名称。')}</p>
         <label className="field">
           <span>{t('邮箱')}</span>
           <input type="text" readOnly value={email} />
@@ -238,7 +237,7 @@ export default function ProfileEditor({
           </button>
           <button className="button primary" type="submit" disabled={busy || validating}>
             {busy || validating ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
-            {t('保存个人信息')}
+            {t('保存')}
           </button>
         </div>
       </form>

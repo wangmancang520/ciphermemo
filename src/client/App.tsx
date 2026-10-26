@@ -8,8 +8,6 @@ import {
   type FormEvent,
 } from 'react';
 import {
-  LockKeyhole,
-  ShieldCheck,
   Plus,
   Search,
   FileText,
@@ -21,7 +19,6 @@ import {
   Settings,
   LogOut,
   ArrowLeft,
-  ArrowUpRight,
   Paperclip,
   Download,
   Eye,
@@ -31,11 +28,9 @@ import {
   X,
   Pencil,
   Monitor,
-  ChevronRight,
   Cloud,
   LoaderCircle,
   RotateCcw,
-  HardDrive,
   Upload,
   Menu,
   Lock,
@@ -308,66 +303,14 @@ function Auth({
     <div className="auth-page">
       <header>
         <Brand />
-        <div className="auth-header-right">
-          <span className="version">PERSONAL VAULT · V0.1</span>
-          <Preferences />
-        </div>
+        <Preferences />
       </header>
       <main className="auth-layout">
-        <section className="auth-intro">
-          <div className="eyebrow">
-            <span /> {t('只属于你的数字空间')}
-          </div>
-          <h1>
-            {t('重要的事，')}
-            <br />
-            {t('安心放在这里')}
-            <span>{locale() === 'zh-CN' ? '。' : '.'}</span>
-          </h1>
-          <p>
-            {t('从一闪而过的想法，到需要妥善保管的密码。')}
-            <br />
-            {t('让文字、密钥和文件，都有一个私密的归处。')}
-          </p>
-          <div className="intro-features">
-            <div>
-              <ShieldCheck size={20} />
-              <span>
-                {t('灵感随行')}
-                <small>{t('让每一个想法，都有自己的位置')}</small>
-              </span>
-            </div>
-            <div>
-              <Cloud size={20} />
-              <span>
-                {t('随时取用')}
-                <small>{t('一组账号密码，连接你的设备')}</small>
-              </span>
-            </div>
-            <div>
-              <HardDrive size={20} />
-              <span>
-                {t('自在保存')}
-                <small>{t('文本、图片、文件，无应用容量配额')}</small>
-              </span>
-            </div>
-          </div>
-          <div className="intro-decoration" aria-hidden="true">
-            <div className="deco-line" />
-            <LogoMark size={28} />
-            <span>YOUR THOUGHTS. YOUR KEYS.</span>
-          </div>
-        </section>
         <section className="auth-card" ref={authCard}>
           {created ? (
             <>
-              <div className="card-symbol">
-                <KeyRound />
-              </div>
-              <h2>{t('先保存你的恢复密钥')}</h2>
-              <p className="muted">
-                {t('忘记密码时，它是恢复内容的唯一方式。请保存在这个空间之外。')}
-              </p>
+              <h2>{t('保存恢复密钥')}</h2>
+              <p className="muted">{t('忘记密码时，只能用它恢复访问。请保存在本空间之外。')}</p>
               <code className="recovery-code">{created.recovery}</code>
               <button
                 className="button secondary full"
@@ -393,36 +336,22 @@ function Auth({
                   checked={downloaded}
                   onChange={(e) => setDownloaded(e.target.checked)}
                 />
-                {t('我已将恢复密钥保存在安全位置')}
+                {t('我已保存恢复密钥')}
               </label>
               <button
                 className="button primary full"
                 disabled={!downloaded}
                 onClick={() => onUnlock(created.u, created.raw)}
               >
-                {t('进入我的空间')}
-                <ArrowUpRight size={17} />
+                {t('进入空间')}
               </button>
             </>
           ) : (
             <>
-              <div className="card-symbol brand-symbol">
-                <LogoMark size={44} />
-              </div>
               <h2>
-                {mode === 'setup'
-                  ? t('创建你的私人空间')
-                  : mode === 'recover'
-                    ? t('恢复空间访问')
-                    : t('欢迎回来')}
+                {mode === 'setup' ? t('创建空间') : mode === 'recover' ? t('重设密码') : t('登录')}
               </h2>
-              <p className="muted">
-                {mode === 'setup'
-                  ? t('仅需初始化一次，之后使用账号密码登录。')
-                  : mode === 'recover'
-                    ? t('使用离线恢复密钥设置新密码。')
-                    : t('解锁你的备忘录、密码与文件。')}
-              </p>
+              {mode === 'recover' && <p className="muted">{t('使用恢复密钥设置新密码。')}</p>}
               {notice && <div className="notice">{t(notice)}</div>}
               {success && <div className="notice">{t(success)}</div>}
               {mode === 'setup' && !setupAvailable && (
@@ -445,7 +374,7 @@ function Auth({
               <form onSubmit={submit}>
                 {mode === 'setup' && (
                   <label className="field">
-                    <span>{t('部署初始化口令')}</span>
+                    <span>{t('初始化口令')}</span>
                     <input
                       type="password"
                       required
@@ -463,7 +392,6 @@ function Auth({
                     type={mode === 'setup' ? 'email' : 'text'}
                     inputMode="email"
                     autoComplete="username"
-                    placeholder={t('输入你的邮箱')}
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                   />
@@ -488,7 +416,7 @@ function Auth({
                     name="password"
                     type="password"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                    placeholder={mode === 'login' ? t('输入你的密码') : t('至少 14 个字符的长口令')}
+                    placeholder={mode === 'login' ? undefined : t('至少 14 个字符')}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
@@ -513,9 +441,9 @@ function Auth({
                         checked={trusted}
                         onChange={(e) => setTrusted(e.target.checked)}
                       />
-                      {t('信任此设备，14 天内免输密码')}
+                      {t('信任此设备 14 天')}
                     </label>
-                    <p className="field-help">{t('仅在自己的设备上勾选。陌生设备请保持关闭。')}</p>
+                    <p className="field-help">{t('仅在个人设备上勾选。')}</p>
                   </>
                 )}
                 {error && (
@@ -532,17 +460,10 @@ function Auth({
                   {busy || signingOut ? (
                     <>
                       <Spinner />
-                      {t(signingOut ? '正在退出…' : '正在安全处理…')}
+                      {t(signingOut ? '正在退出…' : '处理中…')}
                     </>
                   ) : (
-                    <>
-                      {mode === 'login'
-                        ? t('解锁我的空间')
-                        : mode === 'recover'
-                          ? t('重设密码')
-                          : t('创建私人空间')}
-                      <ArrowUpRight size={17} />
-                    </>
+                    t(mode === 'login' ? '登录' : mode === 'recover' ? '重设密码' : '创建空间')
                   )}
                 </button>
               </form>
@@ -554,24 +475,14 @@ function Auth({
                     setError('');
                   }}
                 >
-                  {mode === 'login' ? t('忘记密码？使用恢复密钥') : t('返回邮箱密码登录')}
+                  {mode === 'login' ? t('忘记密码？') : t('返回登录')}
                 </button>
               )}
-              <div className="auth-security">
-                <ShieldCheck size={14} />
-                {t('已加密')}
-              </div>
             </>
           )}
         </section>
       </main>
-      <footer className="auth-footer">
-        <span>{t('一处私密空间，收好你的数字生活。')}</span>
-        <span className="auth-credits">
-          <span>Powered by GPT-6.1 Sol</span>
-          <span>{t('由 Cloudflare Workers 驱动')}</span>
-        </span>
-      </footer>
+      <footer className="auth-footer">CipherMemo 0.1 · Powered by GPT-6.1 Sol</footer>
     </div>
   );
 }
@@ -722,6 +633,14 @@ const Editor = forwardRef<
           {t(kinds[draft.kind].name)}
         </div>
         <div className="toolbar-actions">
+          <div className="segmented" data-preview={preview}>
+            <button className={!preview ? 'active' : ''} onClick={() => setPreview(false)}>
+              {t('编辑')}
+            </button>
+            <button className={preview ? 'active' : ''} onClick={() => setPreview(true)}>
+              {t('预览')}
+            </button>
+          </div>
           <button
             className="icon-button"
             aria-label={recordRef.current.pinned ? t('取消置顶') : t('置顶')}
@@ -766,23 +685,18 @@ const Editor = forwardRef<
         <input
           className="title-input"
           aria-label={t('标题')}
-          placeholder={t('给这条内容一个名字')}
+          placeholder={t('标题')}
+          autoFocus={!note.content.title && !note.content.body}
           value={draft.title}
           onChange={(e) => change({ title: e.target.value })}
         />
-        <div className="editor-date">
-          {t('创建于')}
-          {date(note.created_at)}
-          <span>·</span>
-          {t('仅你可见')}
-        </div>
         {draft.kind === 'credential' && (
           <div className="credential-fields">
             <label className="field">
               <span>{t('网站地址')}</span>
               <input
                 value={draft.url || ''}
-                placeholder="https://example.com"
+                placeholder="https://"
                 onChange={(e) => change({ url: e.target.value })}
               />
             </label>
@@ -820,25 +734,11 @@ const Editor = forwardRef<
             />
             <label className="field">
               <span>{t('产品网址')}</span>
-              <input
-                value={draft.url || ''}
-                placeholder={t('可选')}
-                onChange={(e) => change({ url: e.target.value })}
-              />
+              <input value={draft.url || ''} onChange={(e) => change({ url: e.target.value })} />
             </label>
           </div>
         )}
-        <div className="body-head">
-          <span>{draft.kind === 'note' ? t('正文') : t('备注')}</span>
-          <div className="segmented" data-preview={preview}>
-            <button className={!preview ? 'active' : ''} onClick={() => setPreview(false)}>
-              {t('编辑')}
-            </button>
-            <button className={preview ? 'active' : ''} onClick={() => setPreview(true)}>
-              {t('预览')}
-            </button>
-          </div>
-        </div>
+        {draft.kind !== 'note' && <div className="body-head">{t('备注')}</div>}
         <div className="editor-body" ref={bodyPanel}>
           {preview ? (
             <div
@@ -847,9 +747,9 @@ const Editor = forwardRef<
             />
           ) : (
             <textarea
-              className="body-input"
+              className={`body-input ${draft.kind === 'note' ? '' : 'boxed'}`}
               aria-label={t('正文')}
-              placeholder={t('写下值得保存的内容…\n\n支持 Markdown，也可以粘贴图片或拖入文件。')}
+              placeholder={draft.kind === 'note' ? t('正文') : undefined}
               value={draft.body}
               onChange={(e) => change({ body: e.target.value })}
               onPaste={(e) => {
@@ -867,7 +767,7 @@ const Editor = forwardRef<
           <input
             aria-label={t('标签')}
             value={tagsText}
-            placeholder={t('用逗号分隔，例如：工作, 重要')}
+            placeholder={t('用逗号分隔')}
             onChange={(e) => {
               setTagsText(e.target.value);
               change({
@@ -925,24 +825,9 @@ const Editor = forwardRef<
             />
           ))}
         </div>
-        {!attachments.length && !uploading && (
-          <label className="drop-zone">
-            <Upload size={21} />
-            <span>{t('拖入文件，或点击上传')}</span>
-            <small>{t('保留原始文件')}</small>
-            <input
-              type="file"
-              multiple
-              onChange={(e) => {
-                void upload(e.target.files);
-                e.target.value = '';
-              }}
-            />
-          </label>
-        )}
         {state === '保存失败' && (
           <div className="error">
-            <p>{t('编辑内容仍保留在此页面，请勿关闭。')}</p>
+            <p>{t('保存失败，编辑内容仍在此页面，请勿关闭。')}</p>
             <button className="button secondary" onClick={() => flush().catch(onError)}>
               {t('重试保存')}
             </button>{' '}
@@ -968,7 +853,7 @@ const Editor = forwardRef<
           <span>
             {state === '已保存' ? (
               <>
-                {t('当前修改已保存')}{' '}
+                {t('已保存')}{' '}
                 <time dateTime={new Date(savedAt).toISOString()}>{clockTime(savedAt)}</time>
               </>
             ) : (
@@ -977,7 +862,7 @@ const Editor = forwardRef<
           </span>
         </div>
         <span>
-          {draft.body.length.toLocaleString(locale())} {t('字符')}
+          {t('创建于')} {date(note.created_at)}
         </span>
       </footer>
     </article>
@@ -1556,9 +1441,6 @@ export default function App() {
             ) : (
               (profile.content.nickname || unlocked.info.vault.username).charAt(0).toUpperCase()
             )}
-            <span className="avatar-status">
-              <ShieldCheck size={12} />
-            </span>
           </span>
           <div className="space-identity">
             <strong title={profile.content.nickname || t('我的私人空间')}>
@@ -1566,18 +1448,15 @@ export default function App() {
             </strong>
             <span title={unlocked.info.vault.username}>{unlocked.info.vault.username}</span>
           </div>
-          <Pencil size={14} className="profile-edit-hint" aria-hidden="true" />
         </button>
         <button
           className="button primary new-button"
           onClick={() => void navigate(() => setModal('new'))}
         >
-          <Plus size={18} />
-          {t('新建内容')}
-          <span>＋</span>
+          <Plus size={17} />
+          {t('新建')}
         </button>
         <nav>
-          <span className="nav-section">{t('空间')}</span>
           {(
             [
               ['all', t('所有内容'), FolderOpen],
@@ -1600,7 +1479,7 @@ export default function App() {
               <span>{count(f)}</span>
             </button>
           ))}
-          <span className="nav-section">{t('分类')}</span>
+          <span className="nav-section" />
           {(Object.entries(kinds) as [NoteKind, typeof kinds.note][]).map(
             ([f, { name, icon: Icon }]) => (
               <button
@@ -1620,7 +1499,7 @@ export default function App() {
               </button>
             ),
           )}
-          <span className="nav-section spacer" />
+          <span className="nav-section" />
           <button
             className={`nav-item ${filter === 'trash' ? 'active' : ''}`}
             onClick={() =>
@@ -1637,10 +1516,11 @@ export default function App() {
           </button>
           <button className="nav-item" onClick={() => void navigate(() => setModal('settings'))}>
             <Settings size={17} />
-            {t('设置与设备')}
+            {t('设置')}
           </button>
         </nav>
         <div className="sidebar-bottom">
+          <Preferences />
           <button
             className="storage-button"
             onClick={() => {
@@ -1649,16 +1529,9 @@ export default function App() {
                 .catch(showError);
             }}
           >
-            <span className="storage-heading">
-              <span className="storage-symbol">
-                <HardDrive size={17} />
-              </span>
-              <span>{t('空间已使用')}</span>
-              <ChevronRight size={16} />
-            </span>
             <span className="storage-amount">
+              <span>{t('已用')}</span>
               <strong>{usage ? bytes(usage.total) : '…'}</strong>
-              <span>/ 5 GB</span>
             </span>
             <progress
               className={`storage-progress ${usage && usage.total >= STORAGE_REFERENCE ? 'at-reference' : ''}`}
@@ -1667,65 +1540,27 @@ export default function App() {
               max={STORAGE_REFERENCE}
               value={usage ? Math.min(usage.total, STORAGE_REFERENCE) : undefined}
             />
-            <span className="storage-caption">
-              <span>{t('5GB 参考容量')}</span>
-              <span>
-                {usage
-                  ? `${usage.total > 0 && usage.total / STORAGE_REFERENCE < 0.001 ? '<0.1' : new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format((usage.total / STORAGE_REFERENCE) * 100)}%`
-                  : '—'}
-              </span>
-            </span>
           </button>
-          <div className="privacy-label">
-            <span className="live-dot" />
-            {t('已加密')}
-            <button
-              className="icon-button"
-              aria-label={t('锁定并退出')}
-              onClick={() => void lock()}
-            >
-              <Lock size={15} />
-            </button>
-          </div>
+          <button className="nav-item" onClick={() => void lock()}>
+            <Lock size={17} />
+            {t('锁定')}
+          </button>
         </div>
       </aside>
       <main className={`workspace-main ${active ? 'has-selection' : ''}`}>
-        <header className="workspace-header">
-          <div>
-            <button
-              className="icon-button mobile-menu"
-              aria-label={t('打开导航')}
-              onClick={() => setMobileSidebar(!mobileSidebar)}
-            >
-              <Menu size={21} />
-            </button>
-            <span className="breadcrumb">{t('我的空间')}</span>
-            <ChevronRight size={13} />
-            <strong>{t(filterName)}</strong>
-          </div>
-          <div className="header-right">
-            <Preferences />
-            <span className="encrypted-badge">
-              <ShieldCheck size={14} />
-              {t('已加密')}
-            </span>
-            <button
-              className="icon-button"
-              aria-label={t('退出登录')}
-              onClick={() => void lock('已退出登录，并清除此设备的信任。')}
-            >
-              <LogOut size={17} />
-            </button>
-          </div>
-        </header>
         <div className="content-layout">
           <section className="note-panel">
             <div className="list-heading">
               <div>
+                <button
+                  className="icon-button mobile-menu"
+                  aria-label={t('打开导航')}
+                  onClick={() => setMobileSidebar(!mobileSidebar)}
+                >
+                  <Menu size={19} />
+                </button>
                 <h1>{t(filterName)}</h1>
-                <span>
-                  {filtered.length} {t('条内容')}
-                </span>
+                <span>{filtered.length}</span>
               </div>
               <button
                 className="icon-button"
@@ -1739,11 +1574,10 @@ export default function App() {
               <Search size={16} />
               <input
                 aria-label={t('搜索内容')}
-                placeholder={t('搜索标题、内容或标签…')}
+                placeholder={t('搜索')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <span>⌕</span>
             </label>
             {filter === 'trash' && (
               <div className="trash-hint">{t('删除后保留 30 天，可随时恢复。')}</div>
@@ -1752,66 +1586,54 @@ export default function App() {
               {busy && !notes.length ? (
                 <div className="list-empty">
                   <Spinner />
-                  {t('正在解密内容…')}
+                  {t('正在加载…')}
                 </div>
               ) : (
                 filtered.map((n) => {
                   const { icon: Icon, color, name } = kinds[n.content.kind];
                   const attachmentCount = attachments.filter((a) => a.note_id === n.id).length;
+                  const preview = (
+                    n.content.kind === 'credential' ? n.content.username || '' : n.content.body
+                  )
+                    .trim()
+                    .slice(0, 100);
                   return (
                     <button
                       className={`note-card ${n.id === selected ? 'selected' : ''}`}
                       key={n.id}
                       onClick={() => void navigate(() => setSelected(n.id))}
                     >
-                      <div className="note-card-top">
-                        <span className={`note-type ${color}`}>
-                          <Icon size={15} />
-                          {t(name)}
+                      <h3>{n.content.title || t('未命名')}</h3>
+                      {preview && <p>{preview}</p>}
+                      <div className="note-card-meta">
+                        <span className={`note-type ${color}`} title={t(name)}>
+                          <Icon size={13} aria-label={t(name)} />
                         </span>
-                        {!!n.pinned && <Pin size={12} />}
                         <time>{shortDate(n.updated_at)}</time>
+                        {!!n.pinned && <Pin size={12} aria-label={t('已置顶')} />}
+                        {n.content.tags.slice(0, 2).map((t) => (
+                          <span key={t} className="tag">
+                            {t}
+                          </span>
+                        ))}
+                        {attachmentCount > 0 && (
+                          <span className="note-card-files">
+                            <Paperclip size={11} />
+                            {attachmentCount}
+                          </span>
+                        )}
                       </div>
-                      <h3>{n.content.title || t('未命名内容')}</h3>
-                      <p>
-                        {n.content.kind === 'credential'
-                          ? n.content.username || t('已加密')
-                          : n.content.kind === 'license'
-                            ? n.content.body.trim().slice(0, 100) || t('已加密')
-                            : n.content.body.slice(0, 100) || t('还没有添加内容')}
-                      </p>
-                      {(n.content.tags.length > 0 || attachmentCount > 0) && (
-                        <div className="note-card-bottom">
-                          <div>
-                            {n.content.tags.slice(0, 2).map((t) => (
-                              <span key={t} className="tag">
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                          {attachmentCount > 0 && (
-                            <span>
-                              <Paperclip size={11} />
-                              {attachmentCount}
-                            </span>
-                          )}
-                        </div>
-                      )}
                     </button>
                   );
                 })
               )}
               {!busy && !filtered.length && (
                 <div className="list-empty">
-                  <FolderOpen size={25} />
-                  <span>
-                    {search
-                      ? t('没有找到匹配内容')
-                      : filter === 'trash'
-                        ? t('回收站是空的')
-                        : t('还没有内容')}
-                  </span>
-                  <small>{search ? t('试试其他关键词') : t('保存你的第一条备忘录吧')}</small>
+                  {search
+                    ? t('没有匹配的内容')
+                    : filter === 'trash'
+                      ? t('回收站是空的')
+                      : t('还没有内容')}
                 </div>
               )}
             </div>
@@ -1860,9 +1682,8 @@ export default function App() {
                 </button>
                 {active.deleted_at ? (
                   <div className="trash-detail">
-                    <Trash2 size={36} />
-                    <h2>{active.content.title || t('未命名内容')}</h2>
-                    <p>{t('这条内容在回收站中，恢复后可以继续查看和编辑。')}</p>
+                    <h2>{active.content.title || t('未命名')}</h2>
+                    <p>{t('这条内容在回收站中，恢复后可继续编辑。')}</p>
                     <button
                       className="button primary"
                       onClick={async () => {
@@ -1875,7 +1696,7 @@ export default function App() {
                       }}
                     >
                       <RotateCcw size={16} />
-                      {t('恢复内容')}
+                      {t('恢复')}
                     </button>
                     <button className="text-button danger" onClick={() => setModal('trash')}>
                       {t('永久删除')}
@@ -1925,38 +1746,11 @@ export default function App() {
               </>
             ) : (
               <div className="welcome-empty">
-                <div className="empty-art">
-                  <div className="empty-paper">
-                    <FileText size={30} />
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                  <span className="empty-lock">
-                    <LockKeyhole size={20} />
-                  </span>
-                </div>
-                <span className="eyebrow">A LITTLE SPACE, ALL YOURS</span>
-                <h2>
-                  {t(isFirstContent ? '给重要的内容，一个安心的归处。' : '选择一条内容开始查看')}
-                </h2>
-                <p>
-                  {t(isFirstContent ? '记下你的第一条内容，' : '从左侧列表选择一条内容，')}
-                  <br />
-                  {t(
-                    isFirstContent
-                      ? '让想法、账号和文件都有自己的位置。'
-                      : '或记下此刻的想法，收好下一次要用的密钥。',
-                  )}
-                </p>
-                <button className="button primary" onClick={() => setModal('new')}>
-                  <Plus size={17} />
-                  {t(isFirstContent ? '新建第一条内容' : '新建内容')}
+                <p>{t(isFirstContent ? '还没有内容' : '未选择内容')}</p>
+                <button className="button secondary" onClick={() => setModal('new')}>
+                  <Plus size={16} />
+                  {t('新建')}
                 </button>
-                <div className="empty-foot">
-                  <ShieldCheck size={14} />
-                  {t('多设备访问 · 随时记录')}
-                </div>
               </div>
             )}
           </section>
@@ -1972,27 +1766,15 @@ export default function App() {
       )}
       <MotionPresence>
         {modal === 'new' && (
-          <Modal title={t('你想保存什么？')} onClose={() => setModal(null)}>
-            <p className="muted">{t('为每一种重要内容，找到合适的位置。')}</p>
+          <Modal title={t('新建')} onClose={() => setModal(null)}>
             <div className="new-grid">
               {(Object.entries(kinds) as [NoteKind, typeof kinds.note][]).map(
                 ([kind, { name, icon: Icon, color }]) => (
                   <button key={kind} disabled={busy} onClick={() => void create(kind)}>
                     <span className={`type-icon ${color}`}>
-                      <Icon size={24} />
+                      <Icon size={18} />
                     </span>
                     <strong>{t(name)}</strong>
-                    <small>
-                      {
-                        {
-                          note: t('想法、记录与 Markdown'),
-                          credential: t('网站、用户名与密码'),
-                          license: t('软件序列号与激活码'),
-                          file: t('图片、文档与小文件'),
-                        }[kind]
-                      }
-                    </small>
-                    <ArrowUpRight size={17} />
                   </button>
                 ),
               )}
@@ -2003,10 +1785,7 @@ export default function App() {
       <MotionPresence>
         {modal === 'usage' && usage && (
           <Modal title={t('空间用量')} onClose={() => setModal(null)}>
-            <div className="usage-total">
-              {bytes(usage.total)}
-              <small>{t('已保存的内容，无应用容量配额')}</small>
-            </div>
+            <div className="usage-total">{bytes(usage.total)}</div>
             <div className="usage-rows">
               {[
                 [t('文本与条目'), usage.text],
@@ -2021,8 +1800,10 @@ export default function App() {
               ))}
             </div>
             <p className="muted small">
-              {usage.notes} {t('条内容 ·')}
-              {usage.attachments} {t('个附件。')}
+              {t('{notes} 条内容，{files} 个附件', {
+                notes: usage.notes,
+                files: usage.attachments,
+              })}
             </p>
           </Modal>
         )}
@@ -2031,8 +1812,9 @@ export default function App() {
         {modal === 'trash' && active && (
           <Modal title={t('永久删除这条内容？')} onClose={() => setModal(null)}>
             <p className="muted">
-              “{active.content.title || t('未命名内容')}
-              {t('”及其附件将永久删除，无法从回收站恢复。')}
+              {t('“{title}”及其附件将被永久删除。', {
+                title: active.content.title || t('未命名'),
+              })}
             </p>
             <div className="modal-actions">
               <button className="button secondary" onClick={() => setModal(null)}>
@@ -2342,7 +2124,7 @@ function SettingsModal({
   }
   return (
     <Modal
-      title={t('空间设置')}
+      title={t('设置')}
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -2350,8 +2132,8 @@ function SettingsModal({
       <div className="settings-tabs">
         {(
           [
-            ['devices', t('登录设备')],
-            ['security', t('账号安全')],
+            ['devices', t('设备')],
+            ['security', t('密码')],
             ['backup', t('备份与恢复')],
           ] as const
         ).map(([tabId, label]) => (
@@ -2371,11 +2153,7 @@ function SettingsModal({
       <div className="settings-tab-panel" ref={tabPanel}>
         {tab === 'devices' && (
           <>
-            <p className="muted small">
-              {t(
-                '可信设备在固定 14 天内免输密码，到期后需要重新登录。撤销后将阻止该设备后续在线访问。',
-              )}
-            </p>
+            <p className="muted small">{t('可信设备 14 天内免输密码。')}</p>
             <div className="device-list">
               {devices.map((d) => (
                 <div key={d.id} className="device-row">
@@ -2451,13 +2229,6 @@ function SettingsModal({
         )}
         {tab === 'security' && (
           <>
-            <div className="account-info">
-              <ShieldCheck size={20} />
-              <div>
-                <strong>{unlocked.info.vault.username}</strong>
-                <small>{t('个人空间 · 不开放注册')}</small>
-              </div>
-            </div>
             <form onSubmit={changePassword}>
               <label className="field">
                 <span>{t('当前密码')}</span>
@@ -2476,7 +2247,6 @@ function SettingsModal({
                   minLength={14}
                   type="password"
                   autoComplete="new-password"
-                  placeholder={t('至少 14 个字符')}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                 />
@@ -2493,7 +2263,7 @@ function SettingsModal({
               </label>
               <p className="muted small">
                 {t(
-                  '修改密码将退出所有设备。原恢复密钥仍然有效；旧备份仍需导出时的密码。若怀疑密码已泄露，还需轮换数据密钥，当前版本尚未提供此操作。',
+                  '至少 14 个字符。修改后所有设备需重新登录；恢复密钥不变，旧备份仍用导出时的密码。',
                 )}
               </p>
               <button className="button primary" disabled={!!busy}>
@@ -2510,9 +2280,7 @@ function SettingsModal({
                 {t('导出备份')}
               </h3>
               <p className="muted small">
-                {t(
-                  '包含所有条目、文件和回收站。恢复时需要导出当时的密码；较大的备份可能受设备内存限制。',
-                )}
+                {t('包含全部条目、附件和回收站。导入时需要导出时的密码。')}
               </p>
               <button
                 className="button secondary full"
@@ -2527,9 +2295,7 @@ function SettingsModal({
                 <Upload size={18} />
                 {t('从备份导入')}
               </h3>
-              <p className="muted small">
-                {t('导入为新副本，不覆盖现有内容。网络中断时可能部分完成，请查看提示后再重试。')}
-              </p>
+              <p className="muted small">{t('导入为副本，不覆盖现有内容。')}</p>
               <form onSubmit={importBackup}>
                 <label className="field">
                   <span>{t('备份文件')}</span>
@@ -2565,10 +2331,7 @@ function SettingsModal({
         </div>
       )}
       {info && <div className="notice">{t(info)}</div>}
-      <div className="settings-footer">
-        <LogoMark size={20} />
-        <span>CipherMemo 0.1 · Cloudflare Workers / D1 / R2</span>
-      </div>
+      <div className="settings-footer">CipherMemo 0.1 · Powered by GPT-6.1 Sol</div>
     </Modal>
   );
 }

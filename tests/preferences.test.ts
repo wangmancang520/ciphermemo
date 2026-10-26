@@ -59,7 +59,7 @@ describe('界面偏好', () => {
     systemLanguage = 'en-GB';
     events.languagechange();
     expect(root.lang).toBe('en-US');
-    expect(t('当前修改已保存')).toBe('Changes saved');
+    expect(t('已保存')).toBe('Saved');
   });
 
   it('显式选择会持久保存，并优先于系统设置；仍可恢复跟随系统', async () => {

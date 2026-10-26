@@ -1,5 +1,3 @@
-import { t } from './preferences';
-
 /** Shared SVG asset for the app, login transition, favicon, and project docs. */
 export function LogoMark({ size = 40, className = '' }: { size?: number; className?: string }) {
   return (
@@ -21,9 +19,7 @@ export default function Brand() {
       <span className="brand-icon">
         <LogoMark />
       </span>
-      <span>
-        CipherMemo<small>{t('你的私人空间')}</small>
-      </span>
+      <span>CipherMemo</span>
     </div>
   );
 }
