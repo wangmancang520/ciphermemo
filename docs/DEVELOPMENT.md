@@ -60,6 +60,7 @@ Vite 监听 `127.0.0.1`，并将 `/api` 代理到 8787。完整端到端验证�
 | [`tests/server.test.ts`](../tests/server.test.ts)           | 初始化、鉴权、会话、来源检查、HTTPS、回收站、并发、上传、个人信息和清理 |
 | [`tests/preferences.test.ts`](../tests/preferences.test.ts) | 系统语言与主题、手动偏好、存储容错和跨标签页同步                        |
 | [`tests/motion.test.ts`](../tests/motion.test.ts)           | 动画中断、连续切换、减少动态效果、浏览器降级与监听清理                  |
+| [`tests/rich-editor.test.ts`](../tests/rich-editor.test.ts) | 行内图片引用、备份导入 ID 改写、列表预览、Markdown 往返与源码模式回退   |
 
 UI 变更还应检查：桌面与窄屏、浅色与深色、中英文、长邮箱与长昵称，以及保存失败时的反馈。交互动效还需检查快速连续切换、弹窗关闭后焦点恢复、编辑草稿保留、退出后私人内容卸载，以及系统“减少动态效果”启用时跳过动画。Logo 与文档图片检查见[品牌规范](BRANDING.md)。
 

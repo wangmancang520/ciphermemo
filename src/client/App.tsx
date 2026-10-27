@@ -1,9 +1,13 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   forwardRef,
+  lazy,
+  Suspense,
   useImperativeHandle,
   type FormEvent,
 } from 'react';
@@ -46,8 +50,8 @@ import MotionPresence from './MotionPresence';
 import { useMotionSwitch, prefersReducedMotion } from './motion';
 import ProfileEditor, { useAvatar, openProfile, emptyProfile } from './ProfileEditor';
 import { PROFILE_OWNER_ID, type ProfileContent, type ProfileRecord } from '../shared/types';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import type { FilesHandler, InlineImage } from './RichEditor';
+import { attachmentRefs, imageMarkdown, previewText, remapAttachmentRefs } from './inlineImages';
 import { api, post, ApiError } from './api';
 import * as crypt from './crypto';
 import { forgetDevice, rememberDevice, rememberedDevice } from './trust';
@@ -75,6 +79,9 @@ const kinds: Record<NoteKind, { name: string; icon: typeof FileText; color: stri
   license: { name: '激活密钥', icon: Ticket, color: 'violet' },
   file: { name: '文件', icon: FolderOpen, color: 'green' },
 };
+// The editor bundle is large; it loads after unlocking instead of with the login page.
+const loadRichSchema = () => import('./richSchema');
+const RichEditor = lazy(() => import('./RichEditor'));
 export const bytes = (n: number) =>
   n < 1024
     ? `${n} B`
@@ -497,6 +504,7 @@ const Editor = forwardRef<
     note: OpenNote;
     vaultKey: CryptoKey;
     attachments: Attachment[];
+    allAttachments: Attachment[];
     onSaved: (n: OpenNote) => void;
     onFilesChanged: () => Promise<void>;
     onError: (e: unknown) => void;
@@ -505,14 +513,49 @@ const Editor = forwardRef<
     onCopy: (content: NoteContent) => void;
   }
 >(function Editor(
-  { note, vaultKey, attachments, onSaved, onFilesChanged, onError, onState, onTrash, onCopy },
+  {
+    note,
+    vaultKey,
+    attachments,
+    allAttachments,
+    onSaved,
+    onFilesChanged,
+    onError,
+    onState,
+    onTrash,
+    onCopy,
+  },
   ref,
 ) {
   const [draft, setDraft] = useState(note.content);
   const [tagsText, setTagsText] = useState(note.content.tags.join(', '));
-  const [preview, setPreview] = useState(false);
+  // Notes and file items get the rich editor; credential and license remarks stay plain text.
+  const rich = note.content.kind === 'note' || note.content.kind === 'file';
+  // Content the rich editor would rewrite opens as Markdown source, so nothing changes unasked.
+  const [unsupported, setUnsupported] = useState<boolean | null>(rich ? null : false);
+  const [source, setSource] = useState(false);
+  // Decided once per opened note; later saves must not switch the mode back.
+  const [openedBody] = useState(note.content.body);
+  useEffect(() => {
+    if (!rich) return;
+    let active = true;
+    const decide = (editable: boolean) => {
+      if (!active) return;
+      setUnsupported(!editable);
+      setSource(!editable);
+    };
+    // If the editor cannot load (for example offline), plain source editing still works.
+    loadRichSchema().then(
+      (m) => decide(m.richEditable(openedBody)),
+      () => decide(false),
+    );
+    return () => {
+      active = false;
+    };
+  }, [rich, openedBody]);
   const bodyPanel = useRef<HTMLDivElement>(null);
-  useMotionSwitch(bodyPanel, preview);
+  const bodyInput = useRef<HTMLTextAreaElement>(null);
+  useMotionSwitch(bodyPanel, source);
   const [uploading, setUploading] = useState('');
   const draftRef = useRef(draft);
   const recordRef = useRef(note);
@@ -588,6 +631,18 @@ const Editor = forwardRef<
       if (timer.current) clearTimeout(timer.current);
     };
   }, [draft, flush, onError]);
+  // Fill the free space below the title and grow with the text, so the panel scrolls instead.
+  useLayoutEffect(() => {
+    const input = bodyInput.current;
+    if (!input) return;
+    const fit = () => {
+      input.style.height = '0px';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [draft.body, draft.kind, source]);
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (JSON.stringify(draftRef.current) !== savedRef.current || task.current) {
@@ -615,18 +670,86 @@ const Editor = forwardRef<
       setUploading('');
     }
   }
+  // Decrypted inline images, kept as blob: URLs for as long as this note is open.
+  const images = useRef(new Map<string, Promise<string>>());
+  const known = useRef(allAttachments);
+  known.current = allAttachments;
+  useEffect(() => {
+    const cache = images.current;
+    return () => {
+      for (const url of cache.values()) void url.then(URL.revokeObjectURL, () => {});
+      cache.clear();
+    };
+  }, []);
+  const resolveImage = useCallback(
+    (id: string) => {
+      let url = images.current.get(id);
+      if (!url) {
+        const attachment = known.current.find((a) => a.id === id);
+        url = attachment
+          ? fileBlob(vaultKey, attachment).then(({ blob }) => URL.createObjectURL(blob))
+          : Promise.reject(new Error('missing attachment'));
+        images.current.set(id, url);
+        url.catch(() => images.current.delete(id));
+      }
+      return url;
+    },
+    [vaultKey],
+  );
+  /** Images go inline where they were dropped or pasted; other files join the attachment list. */
+  const handleFiles: FilesHandler = (files, insert) => {
+    const inline = files.filter((f) => /^image\/(png|jpe?g|gif|webp|avif|bmp)$/.test(f.type));
+    const others = files.filter((f) => !inline.includes(f));
+    void (async () => {
+      try {
+        const placed: InlineImage[] = [];
+        for (const file of inline) {
+          setUploading(`${file.name} · 0%`);
+          const id = await uploadFile(vaultKey, note.id, file, (p) =>
+            setUploading(`${file.name} · ${p}%`),
+          );
+          images.current.set(id, Promise.resolve(URL.createObjectURL(file)));
+          placed.push({ id, name: file.name });
+        }
+        insert(placed);
+        for (const file of others) {
+          setUploading(`${file.name} · 0%`);
+          await uploadFile(vaultKey, note.id, file, (p) => setUploading(`${file.name} · ${p}%`));
+        }
+        await onFilesChanged();
+      } catch (e) {
+        onError(e);
+      } finally {
+        setUploading('');
+      }
+    })();
+  };
+  const insertIntoSource = (at: number) => (placed: InlineImage[]) => {
+    if (!placed.length) return;
+    const body = draftRef.current.body;
+    const pos = Math.min(at, body.length);
+    const before = body.slice(0, pos);
+    const after = body.slice(pos);
+    const markdown = placed.map((i) => imageMarkdown(i.id, i.name)).join('\n\n');
+    change({
+      body: `${before}${before && !before.endsWith('\n') ? '\n\n' : ''}${markdown}${after.startsWith('\n') ? '' : '\n'}${after}`,
+    });
+  };
+  const inlineIds = useMemo(() => attachmentRefs(draft.body), [draft.body]);
+  const listed = attachments.filter((a) => !inlineIds.has(a.id));
   const KIcon = kinds[draft.kind].icon;
-  const content = DOMPurify.sanitize(marked.parse(draft.body, { async: false }) as string, {
-    FORBID_TAGS: ['img', 'style', 'input', 'form'],
-    FORBID_ATTR: ['style'],
-  });
   return (
     <article
       className="editor"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
+        // The rich editor handles drops onto the text itself.
+        if (e.nativeEvent.defaultPrevented) return;
         e.preventDefault();
-        void upload(Array.from(e.dataTransfer.files));
+        const files = Array.from(e.dataTransfer.files);
+        if (rich && source && bodyInput.current)
+          handleFiles(files, insertIntoSource(bodyInput.current.selectionStart));
+        else void upload(files);
       }}
     >
       <div className="editor-toolbar">
@@ -635,14 +758,16 @@ const Editor = forwardRef<
           {t(kinds[draft.kind].name)}
         </div>
         <div className="toolbar-actions">
-          <div className="segmented" data-preview={preview}>
-            <button className={!preview ? 'active' : ''} onClick={() => setPreview(false)}>
-              {t('编辑')}
-            </button>
-            <button className={preview ? 'active' : ''} onClick={() => setPreview(true)}>
-              {t('预览')}
-            </button>
-          </div>
+          {rich && (
+            <div className="segmented" data-preview={source}>
+              <button className={!source ? 'active' : ''} onClick={() => setSource(false)}>
+                {t('富文本')}
+              </button>
+              <button className={source ? 'active' : ''} onClick={() => setSource(true)}>
+                {t('源码')}
+              </button>
+            </div>
+          )}
           <button
             className="icon-button"
             aria-label={recordRef.current.pinned ? t('取消置顶') : t('置顶')}
@@ -740,26 +865,42 @@ const Editor = forwardRef<
             </label>
           </div>
         )}
-        {draft.kind !== 'note' && <div className="body-head">{t('备注')}</div>}
+        {!rich && <div className="body-head">{t('备注')}</div>}
+        {unsupported && source && (
+          <p className="editor-hint">
+            {t(
+              '此内容含有富文本模式不支持的格式，已用源码打开。切换到富文本并编辑后，这些格式可能会被调整。',
+            )}
+          </p>
+        )}
         <div className="editor-body" ref={bodyPanel}>
-          {preview ? (
-            <div
-              className="markdown"
-              dangerouslySetInnerHTML={{ __html: content || t('<p>还没有内容。</p>') }}
-            />
+          {rich && unsupported === null ? (
+            <div className="rich-loading" />
+          ) : rich && !source ? (
+            <Suspense fallback={<div className="rich-loading" />}>
+              <RichEditor
+                value={draft.body}
+                placeholder={t('正文')}
+                resolveImage={resolveImage}
+                onChange={(body) => change({ body })}
+                onFiles={handleFiles}
+              />
+            </Suspense>
           ) : (
             <textarea
-              className={`body-input ${draft.kind === 'note' ? '' : 'boxed'}`}
+              ref={bodyInput}
+              className={`body-input ${rich ? 'source' : 'boxed'}`}
               aria-label={t('正文')}
-              placeholder={draft.kind === 'note' ? t('正文') : undefined}
+              placeholder={rich ? t('正文') : undefined}
+              spellCheck={false}
               value={draft.body}
               onChange={(e) => change({ body: e.target.value })}
               onPaste={(e) => {
                 const fs = Array.from(e.clipboardData.files);
-                if (fs.length) {
-                  e.preventDefault();
-                  void upload(fs);
-                }
+                if (!fs.length) return;
+                e.preventDefault();
+                if (rich) handleFiles(fs, insertIntoSource(e.currentTarget.selectionStart));
+                else void upload(fs);
               }}
             />
           )}
@@ -789,7 +930,7 @@ const Editor = forwardRef<
           <span>
             <Paperclip size={15} />
             {t('附件')}
-            <small>{attachments.length}</small>
+            <small>{listed.length}</small>
           </span>
           <label className={`text-button upload-button ${uploading ? 'disabled' : ''}`}>
             <Plus size={14} />
@@ -813,7 +954,7 @@ const Editor = forwardRef<
           </div>
         )}
         <div className="attachment-list">
-          {attachments.map((a) => (
+          {listed.map((a) => (
             <AttachmentCard
               key={a.id}
               attachment={a}
@@ -1217,6 +1358,9 @@ export default function App() {
   const unlock = useCallback(
     (u: Unlocked, raw: Uint8Array<ArrayBuffer>) => {
       rawKey.current = raw;
+      // Warm the editor bundle while the workspace loads.
+      void loadRichSchema().catch(() => {});
+      void import('./RichEditor').catch(() => {});
       setUnlocked(u);
       setEntering(true);
       setLockAnimating(false);
@@ -1595,7 +1739,9 @@ export default function App() {
                   const { icon: Icon, color, name } = kinds[n.content.kind];
                   const attachmentCount = attachments.filter((a) => a.note_id === n.id).length;
                   const preview = (
-                    n.content.kind === 'credential' ? n.content.username || '' : n.content.body
+                    n.content.kind === 'credential'
+                      ? n.content.username || ''
+                      : previewText(n.content.body, t('图片'))
                   )
                     .trim()
                     .replace(/\n\s*\n+/g, '\n')
@@ -1712,6 +1858,7 @@ export default function App() {
                     note={active}
                     vaultKey={unlocked.key}
                     attachments={attachments.filter((a) => a.note_id === active.id)}
+                    allAttachments={attachments}
                     onSaved={(n) => {
                       updateNote(n);
                       void api<Usage>('/usage').then(setUsage).catch(showError);
@@ -2042,6 +2189,24 @@ function SettingsModal({
         if (size !== meta.size || Math.max(1, Math.ceil(meta.size / crypt.CHUNK_SIZE)) !== a.chunks)
           throw new Error('备份文件校验失败');
       }
+      // Files are uploaded again under new ids; inline image references in bodies must follow.
+      const fileIds = new Map<string, string>();
+      const backupFiles = new Set(backup.attachments.map((a) => a.id));
+      const relink = async (id: string, record: NoteRecord, content: NoteContent) => {
+        const body = remapAttachmentRefs(content.body, fileIds);
+        if (body === content.body) return;
+        const next = { ...content, body };
+        await api(`/notes/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            payload: await crypt.seal(unlocked.key, next, `note:${id}`),
+            revision: record.revision,
+            pinned: record.pinned,
+          }),
+        });
+      };
+      const deferred: { id: string; record: NoteRecord; content: NoteContent; trash: boolean }[] =
+        [];
       for (const n of backup.notes) {
         setBusy(
           t('正在导入 {current}/{total}…', { current: imported + 1, total: backup.notes.length }),
@@ -2049,7 +2214,7 @@ function SettingsModal({
         const id = crypto.randomUUID();
         const content = contents.get(n.id)!;
         const payload = await crypt.seal(unlocked.key, content, `note:${id}`);
-        await api(`/notes/${id}`, {
+        const record = await api<NoteRecord>(`/notes/${id}`, {
           method: 'PUT',
           body: JSON.stringify({ payload, revision: 0, pinned: n.pinned }),
         });
@@ -2059,14 +2224,27 @@ function SettingsModal({
           const parts: Uint8Array<ArrayBuffer>[] = [];
           for (let p = 0; p < a.parts.length; p++)
             parts.push(await crypt.openChunk(oldKey, crypt.unbase64(a.parts[p]), a.id, p));
-          await uploadFile(
-            unlocked.key,
-            id,
-            new window.File(parts, meta.name, { type: meta.type }),
-            () => {},
+          fileIds.set(
+            a.id,
+            await uploadFile(
+              unlocked.key,
+              id,
+              new window.File(parts, meta.name, { type: meta.type }),
+              () => {},
+            ),
           );
         }
-        if (n.deleted_at) await post(`/notes/${id}/trash`);
+        // A copied note can show another note's image that has not been uploaded yet.
+        if ([...attachmentRefs(content.body)].some((r) => backupFiles.has(r) && !fileIds.has(r)))
+          deferred.push({ id, record, content, trash: !!n.deleted_at });
+        else {
+          await relink(id, record, content);
+          if (n.deleted_at) await post(`/notes/${id}/trash`);
+        }
+      }
+      for (const { id, record, content, trash } of deferred) {
+        await relink(id, record, content);
+        if (trash) await post(`/notes/${id}/trash`);
       }
       if (restoredProfile) {
         const current = await api<ProfileRecord>('/profile');
